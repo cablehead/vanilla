@@ -1,4 +1,4 @@
-# ![Vanilla](http://dv10.foo.msgme.im:8000/Projects/vanilla/_static/vanilla-logo.png) Welcome to Vanilla!
+# ![Vanilla](https://raw.githubusercontent.com/cablehead/vanilla/master/docs/images/vanilla-logo.png) Welcome to Vanilla!
 
 > *If Go and ZeroMQ had a baby, and that baby grew up and started dating
 > PyPy, and they had a baby, it might look like Vanilla.*
