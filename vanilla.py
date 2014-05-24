@@ -104,7 +104,7 @@ class Hub(object):
         Scheduler steps:
             - run ready until exhaustion
 
-            - if there's something schedule
+            - if there's something scheduled
                 - run overdue scheduled immediately
                 - or if there's nothing registered, sleep until next scheduled
                   and then go back to ready
