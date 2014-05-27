@@ -22,12 +22,11 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   dependencies when using PyPy. When using CPython you'll just need to install
   the Greenlet and CFFI packages.
 
-- **pragmatic**: it let's you quickly assemble services which will run on
-  Linux. But only Linux. This makes it easier to avoid introducing dependencies
-  on cross platform asynchronous UI libraries like libevent, libev and libuv
-  making vanilla PyPy support simple.
+- **concurrent**: supports highly concurrent actor based architectures taking
+  inspiration from Go to use *coroutines* and *channels* for message passing as
+  core building blocks.
 
-- **predictable**: it's concurrency model is based on coroutines or green
+- **predictable**: Vanilla's concurrency model is based on coroutines or green
   threads, via the Greenlet package. Arguably this model allows a more natural
   and readable coding style than asynchronous callback models used by Twisted,
   Tornado and Node.
@@ -37,6 +36,7 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   Vanilla is strict about never monkey patching, with a focus on being explicit
   and easy to reason about.
 
-- **concurrent**: supports highly concurrent actor based architectures taking
-  inspiration from Go to use *coroutines* and *channels* for message passing as
-  core building blocks.
+- **pragmatic**: it let's you quickly assemble services which will run on
+  Linux. But only Linux. This makes it easier to avoid introducing dependencies
+  on cross platform asynchronous UI libraries like libevent, libev and libuv
+  making vanilla PyPy support simple.
