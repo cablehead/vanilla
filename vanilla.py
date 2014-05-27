@@ -22,6 +22,9 @@ class Event(object):
     set() method and reset to false with the clear() method. The wait() method
     blocks until the flag is true.
     """
+
+    __slots__ = ['hub', 'fired', 'waiters']
+
     def __init__(self, hub, fired=False):
         self.hub = hub
         self.fired = fired
