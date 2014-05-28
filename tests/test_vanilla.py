@@ -1,3 +1,4 @@
+import signal
 import pytest
 
 
@@ -59,17 +60,17 @@ def test_Channel():
     c = h.channel()
 
     # test send before receive
-    c.send("123")
-    assert "123" == c.recv()
+    c.send('123')
+    assert '123' == c.recv()
 
     # test receive before send
-    h.spawn_later(10, c.send, "123")
-    assert "123" == c.recv()
+    h.spawn_later(10, c.send, '123')
+    assert '123' == c.recv()
 
     # test timeout
-    h.spawn_later(10, c.send, "123")
+    h.spawn_later(10, c.send, '123')
     pytest.raises(vanilla.Timeout, c.recv, timeout=5)
-    assert c.recv(timeout=10) == "123"
+    assert c.recv(timeout=10) == '123'
 
     # test preserving exception details
     try:
@@ -77,6 +78,37 @@ def test_Channel():
     except:
         c.throw()
     pytest.raises(CheckException, c.recv)
+
+    # test pipeline
+    @c
+    def _(x):
+        if x % 2:
+            raise vanilla.Filter
+        return x * 2
+
+    # assert exceptions are propogated
+    c.send('123')
+    pytest.raises(TypeError, c.recv)
+
+    # odd numbers are filtered
+    c.send(5)
+    pytest.raises(vanilla.Timeout, c.recv, timeout=0)
+
+    # success
+    c.send(2)
+    assert 4 == c.recv(timeout=0)
+
+
+def test_Signal():
+    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
+
+    h = vanilla.Hub()
+
+    ch1 = h.signal.subscribe(signal.SIGALRM)
+    ch2 = h.signal.subscribe(signal.SIGALRM)
+
+    assert ch1.recv() == signal.SIGALRM
+    assert ch2.recv() == signal.SIGALRM
 
 
 def test_Scheduler():

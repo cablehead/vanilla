@@ -1,9 +1,12 @@
 import collections
 import traceback
 import select
+import signal
 import heapq
+import fcntl
 import time
 import sys
+import os
 
 
 from greenlet import getcurrent
@@ -15,6 +18,10 @@ class Timeout(Exception):
 
 
 class Closed(Exception):
+    pass
+
+
+class Filter(Exception):
     pass
 
 
@@ -36,6 +43,15 @@ class preserve_exception(object):
             traceback.print_exc()
             sys.stderr.write('\nOriginal exception -->\n\n')
             raise self.typ, self.val, self.tb
+
+
+def ospipe():
+    """creates an os pipe and sets it up for async io"""
+    pipe_r, pipe_w = os.pipe()
+    flags = fcntl.fcntl(pipe_w, fcntl.F_GETFL, 0)
+    flags = flags | os.O_NONBLOCK
+    fcntl.fcntl(pipe_w, fcntl.F_SETFL, flags)
+    return pipe_r, pipe_w
 
 
 class Event(object):
@@ -78,17 +94,32 @@ class Event(object):
 
 class Channel(object):
 
-    __slots__ = ['hub', 'closed', 'items', 'waiters']
+    __slots__ = ['hub', 'closed', 'pipeline', 'items', 'waiters']
 
     def __init__(self, hub):
         self.hub = hub
         self.closed = False
+        self.pipeline = None
         self.items = collections.deque()
         self.waiters = collections.deque()
+
+    def __call__(self, f):
+        if not self.pipeline:
+            self.pipeline = []
+        self.pipeline.append(f)
 
     def send(self, item):
         if self.closed:
             raise Closed
+
+        if self.pipeline:
+            try:
+                for f in self.pipeline:
+                    item = f(item)
+            except Filter:
+                return
+            except Exception, e:
+                item = e
 
         if not self.waiters:
             self.items.append(item)
@@ -136,6 +167,39 @@ class Channel(object):
         self.closed = True
 
 
+class Signal(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.mapper = {}
+        self.reverse_mapper = {}
+
+    def register(self, sig):
+        pipe_r, pipe_w = ospipe()
+
+        def handler(sig, frame):
+            os.write(pipe_w, chr(sig))
+        signal.signal(sig, handler)
+
+        @self.hub.register(pipe_r, select.EPOLLIN)
+        def _((fd, event)):
+            sig = ord(os.read(fd, 1))
+            for ch in self.mapper[sig]:
+                ch.send(sig)
+
+    def subscribe(self, *signals):
+        out = self.hub.channel()
+        self.reverse_mapper[out] = signals
+
+        for sig in signals:
+            if sig not in self.mapper:
+                self.register(sig)
+                self.mapper[sig] = [out]
+            else:
+                self.mapper[sig].append(out)
+
+        return out
+
+
 class Hub(object):
     def __init__(self):
         self.ready = collections.deque()
@@ -144,6 +208,8 @@ class Hub(object):
 
         self.epoll = select.epoll()
         self.registered = {}
+
+        self.signal = Signal(self)
 
         self.loop = greenlet(self.main)
 
@@ -186,6 +252,16 @@ class Hub(object):
     def sleep(self, ms=1):
         self.scheduled.add(ms, getcurrent())
         self.loop.switch()
+
+    def register(self, fd, mask):
+        self.registered[fd] = self.channel()
+        self.epoll.register(fd, mask)
+        return self.registered[fd]
+
+    def unregister(self, fd):
+        if fd in self.registered:
+            self.epoll.unregister(fd)
+            del self.registered[fd]
 
     def main(self):
         """
