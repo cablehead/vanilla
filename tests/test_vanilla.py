@@ -1,4 +1,11 @@
+import pytest
+
+
 import vanilla
+
+
+class CheckException(Exception):
+    pass
 
 
 def test_basics():
@@ -36,6 +43,40 @@ def test_Event():
     assert not done
     e.set()
     assert done
+
+
+def test_preserve_exception():
+    try:
+        raise CheckException('oh hai')
+    except CheckException:
+        e = vanilla.preserve_exception()
+
+    pytest.raises(CheckException, e.reraise)
+
+
+def test_Channel():
+    h = vanilla.Hub()
+    c = h.channel()
+
+    # test send before receive
+    c.send("123")
+    assert "123" == c.recv()
+
+    # test receive before send
+    h.spawn_later(10, c.send, "123")
+    assert "123" == c.recv()
+
+    # test timeout
+    h.spawn_later(10, c.send, "123")
+    pytest.raises(vanilla.Timeout, c.recv, timeout=5)
+    assert c.recv(timeout=10) == "123"
+
+    # test preserving exception details
+    try:
+        raise CheckException('oh hai')
+    except:
+        c.throw()
+    pytest.raises(CheckException, c.recv)
 
 
 def test_Scheduler():

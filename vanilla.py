@@ -1,7 +1,9 @@
 import collections
+import traceback
 import select
 import heapq
 import time
+import sys
 
 
 from greenlet import getcurrent
@@ -14,6 +16,26 @@ class Timeout(Exception):
 
 class Closed(Exception):
     pass
+
+
+class Reraise(Exception):
+    pass
+
+
+class preserve_exception(object):
+    """
+    Marker to pass exceptions through channels
+    """
+    def __init__(self):
+        self.typ, self.val, self.tb = sys.exc_info()
+
+    def reraise(self):
+        try:
+            raise Reraise('Unhandled exception')
+        except:
+            traceback.print_exc()
+            sys.stderr.write('\nOriginal exception -->\n\n')
+            raise self.typ, self.val, self.tb
 
 
 class Event(object):
@@ -54,6 +76,66 @@ class Event(object):
         return self
 
 
+class Channel(object):
+
+    __slots__ = ['hub', 'closed', 'items', 'waiters']
+
+    def __init__(self, hub):
+        self.hub = hub
+        self.closed = False
+        self.items = collections.deque()
+        self.waiters = collections.deque()
+
+    def send(self, item):
+        if self.closed:
+            raise Closed
+
+        if not self.waiters:
+            self.items.append(item)
+            return
+
+        getter = self.waiters.popleft()
+        if isinstance(item, Exception):
+            self.hub.throw_to(getter, item)
+        else:
+            self.hub.switch_to(getter, (self, item))
+
+    def recv(self, timeout=-1):
+        if self.items:
+            item = self.items.popleft()
+            if isinstance(item, preserve_exception):
+                item.reraise()
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        if timeout == 0:
+            raise Timeout('timeout: %s' % timeout)
+
+        self.waiters.append(getcurrent())
+        try:
+            item = self.hub.pause(timeout=timeout)
+            ch, item = item
+        except Timeout:
+            self.waiters.remove(getcurrent())
+            raise
+        return item
+
+    def throw(self):
+        self.send(preserve_exception())
+
+    def __iter__(self):
+        while True:
+            try:
+                yield self.recv()
+            except Closed:
+                raise StopIteration
+
+    def close(self):
+        self.send(Closed("closed"))
+        self.closed = True
+
+
 class Hub(object):
     def __init__(self):
         self.ready = collections.deque()
@@ -67,6 +149,9 @@ class Hub(object):
 
     def event(self, fired=False):
         return Event(self, fired)
+
+    def channel(self):
+        return Channel(self)
 
     def pause(self, timeout=-1):
         if timeout > -1:
@@ -96,7 +181,7 @@ class Hub(object):
         self.ready.append((f, a))
 
     def spawn_later(self, ms, f, *a):
-        self.scheduled.add(ms, f, a)
+        self.scheduled.add(ms, f, *a)
 
     def sleep(self, ms=1):
         self.scheduled.add(ms, getcurrent())
@@ -180,7 +265,7 @@ class Scheduler(object):
         self.queue = []
         self.removed = {}
 
-    def add(self, delay, action, args=()):
+    def add(self, delay, action, *args):
         due = time.time() + (delay / 1000.0)
         item = self.Item(due, action, args)
         heapq.heappush(self.queue, item)
