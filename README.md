@@ -38,3 +38,8 @@ girlfriend in the world, God and Mum.
 [Simperium]:         https://simperium.com/                "Simperium"
 [Littleinc]:         http://littleinc.com                  "Littleinc"
 [this project]:      https://github.com/cablehead/vanilla  "Vanilla"
+
+### PS.
+
+<sub>In case it's not apparent, I'm an atheist.. I'm just trying to wind up
+Alison, Ryan.</sub>
