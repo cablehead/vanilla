@@ -4,7 +4,7 @@
 > PyPy, and they had a baby, it might look like Vanilla.*
 
 * [Overview](#overview)
-* [Tutorial](/docs/tutorial.md)
+* [Tutorial](/docs/tutorial)
 
 ## Example
 
