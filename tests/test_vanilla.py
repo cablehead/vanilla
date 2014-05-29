@@ -100,15 +100,25 @@ def test_Channel():
 
 
 def test_Signal():
-    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
-
     h = vanilla.Hub()
 
+    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
     ch1 = h.signal.subscribe(signal.SIGALRM)
     ch2 = h.signal.subscribe(signal.SIGALRM)
 
     assert ch1.recv() == signal.SIGALRM
     assert ch2.recv() == signal.SIGALRM
+
+    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
+    h.signal.unsubscribe(ch1)
+
+    pytest.raises(vanilla.Timeout, ch1.recv, timeout=12)
+    assert ch2.recv() == signal.SIGALRM
+
+    # assert that removing the last listener for a signal cleans up the
+    # registered file descriptor
+    h.signal.unsubscribe(ch2)
+    assert not h.registered
 
 
 def test_Scheduler():

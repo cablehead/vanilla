@@ -168,6 +168,8 @@ class Channel(object):
 
 
 class Signal(object):
+    Tune = collections.namedtuple('Tune', ['fd', 'subscribers'])
+
     def __init__(self, hub):
         self.hub = hub
         self.mapper = {}
@@ -183,8 +185,10 @@ class Signal(object):
         @self.hub.register(pipe_r, select.EPOLLIN)
         def _((fd, event)):
             sig = ord(os.read(fd, 1))
-            for ch in self.mapper[sig]:
+            for ch in self.mapper[sig].subscribers:
                 ch.send(sig)
+
+        return pipe_r
 
     def subscribe(self, *signals):
         out = self.hub.channel()
@@ -192,12 +196,21 @@ class Signal(object):
 
         for sig in signals:
             if sig not in self.mapper:
-                self.register(sig)
-                self.mapper[sig] = [out]
+                fd = self.register(sig)
+                self.mapper[sig] = self.Tune(fd, [out])
             else:
-                self.mapper[sig].append(out)
+                self.mapper[sig].subscribers.append(out)
 
         return out
+
+    def unsubscribe(self, ch):
+        if ch in self.reverse_mapper:
+            for sig in self.reverse_mapper[ch]:
+                self.mapper[sig].subscribers.remove(ch)
+                if not self.mapper[sig].subscribers:
+                    self.hub.unregister(self.mapper[sig].fd)
+                    del self.mapper[sig]
+            del self.reverse_mapper[ch]
 
 
 class Hub(object):
