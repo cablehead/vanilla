@@ -112,7 +112,7 @@ class Channel(object):
         if self.closed:
             raise Closed
 
-        if self.pipeline:
+        if self.pipeline and not isinstance(item, Closed):
             try:
                 for f in self.pipeline:
                     item = f(item)

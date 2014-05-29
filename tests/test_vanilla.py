@@ -98,6 +98,12 @@ def test_Channel():
     c.send(2)
     assert 4 == c.recv(timeout=0)
 
+    # test closing the channel and channel iteration
+    for i in xrange(10):
+        c.send(i)
+    c.close()
+    assert list(c) == [0, 4, 8, 12, 16]
+
 
 def test_Signal():
     h = vanilla.Hub()
