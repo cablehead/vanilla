@@ -7,10 +7,10 @@
 
 ```python
 
-h = vanilla.Hub()
-ch = h.channel()
-h.spawn(ch.send, 'Hello World')
-ch.recv()
+    h = vanilla.Hub()
+    ch = h.channel()
+    h.spawn(ch.send, 'Hello World')
+    ch.recv()
 ```
 
 ## Overview
