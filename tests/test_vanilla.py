@@ -127,6 +127,16 @@ def test_Signal():
     assert not h.registered
 
 
+def test_stop():
+    """
+    test that all components cleanly shutdown when the hub is requested to stop
+    """
+    h = vanilla.Hub()
+    h.signal.subscribe(signal.SIGALRM)
+    h.stop()
+    assert not h.registered
+
+
 def test_Scheduler():
     s = vanilla.Scheduler()
     s.add(4, 'f2')

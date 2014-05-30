@@ -21,6 +21,10 @@ class Closed(Exception):
     pass
 
 
+class Stop(Closed):
+    pass
+
+
 class Filter(Exception):
     pass
 
@@ -182,11 +186,22 @@ class Signal(object):
             os.write(pipe_w, chr(sig))
         signal.signal(sig, handler)
 
-        @self.hub.register(pipe_r, select.EPOLLIN)
-        def _((fd, event)):
-            sig = ord(os.read(fd, 1))
-            for ch in self.mapper[sig].subscribers:
-                ch.send(sig)
+        ready = self.hub.register(pipe_r, select.EPOLLIN)
+        # TODO: it'd be nice to have a more natural API to loop on channel
+        # input, but handle Stop gracefully
+        @self.hub.spawn
+        def _():
+            while True:
+                try:
+                    fd, event = ready.recv()
+                except Stop:
+                    for ch in self.mapper[sig].subscribers:
+                        self.unsubscribe(ch)
+                        # TODO: should we call ch.close()
+                    return
+                x = ord(os.read(fd, 1))
+                for ch in self.mapper[x].subscribers:
+                    ch.send(x)
 
         return pipe_r
 
@@ -275,6 +290,14 @@ class Hub(object):
         if fd in self.registered:
             self.epoll.unregister(fd)
             del self.registered[fd]
+
+    def stop(self):
+        for fd, ch in self.registered.items():
+            ch.send(Stop("stop"))
+        try:
+            self.stopped.wait()
+        except Closed:
+            return
 
     def main(self):
         """
