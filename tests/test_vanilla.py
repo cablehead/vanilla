@@ -132,8 +132,13 @@ def test_stop():
     test that all components cleanly shutdown when the hub is requested to stop
     """
     h = vanilla.Hub()
+    @h.spawn
+    def _():
+        h.sleep(10000)
+
     h.signal.subscribe(signal.SIGALRM)
     h.stop()
+
     assert not h.registered
 
 

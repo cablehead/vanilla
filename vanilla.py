@@ -271,6 +271,12 @@ class Hub(object):
         self.ready.append((getcurrent(), ()))
         return target.switch(*a)
 
+    def throw_to(self, target, *a):
+        self.ready.append((getcurrent(), ()))
+        if len(a) == 1 and isinstance(a[0], preserve_exception):
+            return target.throw(a[0].typ, a[0].val, a[0].tb)
+        return target.throw(*a)
+
     def spawn(self, f, *a):
         self.ready.append((f, a))
 
@@ -294,6 +300,11 @@ class Hub(object):
     def stop(self):
         for fd, ch in self.registered.items():
             ch.send(Stop("stop"))
+
+        print len(self.scheduled)
+        while self.scheduled:
+            print self.scheduled.pop()
+
         try:
             self.stopped.wait()
         except Closed:
