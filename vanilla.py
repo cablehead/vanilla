@@ -298,7 +298,7 @@ class Signal(object):
         mask = C.sigset(*self.mapper.keys())
         rc = C.sigprocmask(C.SIG_SETMASK, mask, C.NULL)
         assert not rc
-        fd = C.signalfd(self.fd, mask, C.SFD_NONBLOCK|C.SFD_CLOEXEC)
+        fd = C.signalfd(self.fd, mask, C.SFD_NONBLOCK | C.SFD_CLOEXEC)
 
         if self.fd == -1:
             self.start(fd)
@@ -391,12 +391,14 @@ class Hub(object):
             del self.registered[fd]
 
     def stop(self):
-        for fd, ch in self.registered.items():
-            ch.send(Stop("stop"))
+        self.sleep(1)
 
-        print len(self.scheduled)
+        for fd, ch in self.registered.items():
+            ch.send(Stop('stop'))
+
         while self.scheduled:
-            print self.scheduled.pop()
+            task, a = self.scheduled.pop()
+            self.throw_to(task, Stop('stop'))
 
         try:
             self.stopped.wait()

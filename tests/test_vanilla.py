@@ -133,14 +133,17 @@ def test_stop():
     test that all components cleanly shutdown when the hub is requested to stop
     """
     h = vanilla.Hub()
+
     @h.spawn
     def _():
-        h.sleep(10000)
+        pytest.raises(vanilla.Stop, h.sleep, 10000)
 
+    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
     h.signal.subscribe(signal.SIGALRM)
-    h.stop()
 
+    h.stop()
     assert not h.registered
+    assert not h.signal.count
 
 
 def test_Scheduler():
