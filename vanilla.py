@@ -1,9 +1,9 @@
 import collections
 import traceback
 import select
-import signal
 import heapq
 import fcntl
+import cffi
 import time
 import sys
 import os
@@ -56,6 +56,75 @@ def ospipe():
     flags = flags | os.O_NONBLOCK
     fcntl.fcntl(pipe_w, fcntl.F_SETFL, flags)
     return pipe_r, pipe_w
+
+
+def init_C():
+    ffi = cffi.FFI()
+
+    ffi.cdef("""
+        ssize_t read(int fd, void *buf, size_t count);
+
+        int eventfd(unsigned int initval, int flags);
+
+        #define SIG_BLOCK ...
+        #define SIG_UNBLOCK ...
+        #define SIG_SETMASK ...
+
+        typedef struct { ...; } sigset_t;
+
+        int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+
+        int sigemptyset(sigset_t *set);
+        int sigfillset(sigset_t *set);
+        int sigaddset(sigset_t *set, int signum);
+        int sigdelset(sigset_t *set, int signum);
+        int sigismember(const sigset_t *set, int signum);
+
+        #define SFD_NONBLOCK ...
+        #define SFD_CLOEXEC ...
+
+        #define EAGAIN ...
+
+        #define SIGALRM ...
+        #define SIGINT ...
+        #define SIGTERM ...
+
+        struct signalfd_siginfo {
+            uint32_t ssi_signo;   /* Signal number */
+            ...;
+        };
+
+        int signalfd(int fd, const sigset_t *mask, int flags);
+    """)
+
+    C = ffi.verify("""
+        #include <unistd.h>
+        #include <sys/eventfd.h>
+        #include <sys/signalfd.h>
+        #include <signal.h>
+    """)
+
+    # stash some conveniences on C
+    C.ffi = ffi
+    C.NULL = ffi.NULL
+
+    def Cdot(f):
+        setattr(C, f.__name__, f)
+
+    @Cdot
+    def sigset(*nums):
+        s = ffi.new("sigset_t *")
+        assert not C.sigemptyset(s)
+
+        for num in nums:
+            rc = C.sigaddset(s, num)
+            assert not rc, "signum: %s doesn't specify a valid signal." % num
+        return s
+
+    return C
+
+
+C = init_C()
 
 
 class Event(object):
@@ -172,60 +241,83 @@ class Channel(object):
 
 
 class Signal(object):
-    Tune = collections.namedtuple('Tune', ['fd', 'subscribers'])
-
     def __init__(self, hub):
         self.hub = hub
+        self.fd = -1
+        self.count = 0
         self.mapper = {}
         self.reverse_mapper = {}
 
-    def register(self, sig):
-        pipe_r, pipe_w = ospipe()
+    def start(self, fd):
+        self.fd = fd
 
-        def handler(sig, frame):
-            os.write(pipe_w, chr(sig))
-        signal.signal(sig, handler)
+        info = C.ffi.new("struct signalfd_siginfo *")
+        size = C.ffi.sizeof("struct signalfd_siginfo")
 
-        ready = self.hub.register(pipe_r, select.EPOLLIN)
-        # TODO: it'd be nice to have a more natural API to loop on channel
-        # input, but handle Stop gracefully
+        ready = self.hub.register(fd, select.EPOLLIN)
+
         @self.hub.spawn
         def _():
             while True:
                 try:
                     fd, event = ready.recv()
-                except Stop:
-                    for ch in self.mapper[sig].subscribers:
-                        self.unsubscribe(ch)
-                        # TODO: should we call ch.close()
+                except Closed:
+                    self.stop()
                     return
-                x = ord(os.read(fd, 1))
-                for ch in self.mapper[x].subscribers:
-                    ch.send(x)
 
-        return pipe_r
+                rc = C.read(fd, info, size)
+                assert rc == size
+
+                num = info.ssi_signo
+                for ch in self.mapper[num]:
+                    ch.send(num)
+
+    def stop(self):
+        if self.fd == -1:
+            return
+
+        fd = self.fd
+        self.fd = -1
+        self.count = 0
+        self.mapper = {}
+        self.reverse_mapper = {}
+
+        self.hub.unregister(fd)
+        os.close(fd)
+
+    def reset(self):
+        if self.count == len(self.mapper):
+            return
+
+        self.count = len(self.mapper)
+
+        if not self.count:
+            self.stop()
+            return
+
+        mask = C.sigset(*self.mapper.keys())
+        rc = C.sigprocmask(C.SIG_SETMASK, mask, C.NULL)
+        assert not rc
+        fd = C.signalfd(self.fd, mask, C.SFD_NONBLOCK|C.SFD_CLOEXEC)
+
+        if self.fd == -1:
+            self.start(fd)
 
     def subscribe(self, *signals):
         out = self.hub.channel()
         self.reverse_mapper[out] = signals
-
-        for sig in signals:
-            if sig not in self.mapper:
-                fd = self.register(sig)
-                self.mapper[sig] = self.Tune(fd, [out])
-            else:
-                self.mapper[sig].subscribers.append(out)
-
+        for num in signals:
+            self.mapper.setdefault(num, []).append(out)
+        self.reset()
         return out
 
     def unsubscribe(self, ch):
-        if ch in self.reverse_mapper:
-            for sig in self.reverse_mapper[ch]:
-                self.mapper[sig].subscribers.remove(ch)
-                if not self.mapper[sig].subscribers:
-                    self.hub.unregister(self.mapper[sig].fd)
-                    del self.mapper[sig]
-            del self.reverse_mapper[ch]
+        for num in self.reverse_mapper[ch]:
+            self.mapper[num].remove(ch)
+            if not self.mapper[num]:
+                del self.mapper[num]
+        del self.reverse_mapper[ch]
+        self.reset()
 
 
 class Hub(object):
@@ -295,6 +387,7 @@ class Hub(object):
     def unregister(self, fd):
         if fd in self.registered:
             self.epoll.unregister(fd)
+            self.registered[fd].close()
             del self.registered[fd]
 
     def stop(self):

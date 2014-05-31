@@ -109,6 +109,7 @@ def test_Signal():
     h = vanilla.Hub()
 
     signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
+
     ch1 = h.signal.subscribe(signal.SIGALRM)
     ch2 = h.signal.subscribe(signal.SIGALRM)
 
