@@ -25,9 +25,14 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   dependencies when using PyPy. When using CPython you'll just need to install
   the Greenlet and CFFI packages.
 
-- **concurrent**: supports highly concurrent actor based architectures taking
-  inspiration from Go to use *coroutines* and *channels* for message passing as
-  core building blocks.
+- **concurrent**: for creating highly concurrent actor based architectures
+  taking inspiration from Go to use *coroutines* and *channels* for message
+  passing as core building blocks.
+
+- **utilitarian**: a swiss army knife for assembling services. Vanilla
+  abstracts signal handling; thread pools; process creation, control and
+  inter-communication; multiplexing push/pull and request/reply message passing
+  patterns over TCP and UDP
 
 - **predictable**: Vanilla's concurrency model is based on coroutines or green
   threads, via the Greenlet package. Arguably this model allows a more natural
@@ -36,8 +41,8 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
 
   However, green threads have been popularized in the Python world by Eventlet
   and Gevent, resulting in this model becoming synonymous with monkey patching.
-  Vanilla is strict about never monkey patching, with a focus on being explicit
-  and easy to reason about.
+  Vanilla is *strict* about *never monkey patching*, with a focus on being
+  explicit and easy to reason about.
 
 - **pragmatic**: it let's you quickly assemble services which will run on
   Linux. But only Linux. This makes it easier to avoid introducing dependencies
