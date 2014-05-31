@@ -25,15 +25,23 @@ script it doesn't have a chance to shutdown cleanly:
     tick
     tick
     ^CTraceback (most recent call last):
-      File "/home/andy/git/vanilla/vanilla.py", line 165, in __iter__
+      File "vanilla/vanilla.py", line 165, in __iter__
         yield self.recv()
-      File "/home/andy/git/vanilla/vanilla.py", line 152, in recv
+      File "vanilla/vanilla.py", line 152, in recv
         item = self.hub.pause(timeout=timeout)
-      File "/home/andy/git/vanilla/vanilla.py", line 255, in pause
+      File "vanilla/vanilla.py", line 255, in pause
         resume = self.loop.switch()
-      File "/home/andy/git/vanilla/vanilla.py", line 339, in main
+      File "vanilla/vanilla.py", line 339, in main
         time.sleep(timeout)
     KeyboardInterrupt
+
+
+## Signals
+
+You can use *hub.signal* to subscribe to system signals, which will give you a
+channel you can receive on when any of the signals you are interested in fire.
+A very common pattern is to subscribe to SIGTERM and SIGINT and to then block
+the main thread waiting for one of them.
 
 ```python
 
@@ -54,4 +62,80 @@ script it doesn't have a chance to shutdown cleanly:
     done = h.signal.subscribe(signal.SIGINT, signal.SIGTERM)
     done.recv()
     h.signal.unsubscribe(done)
+```
+
+## Stopping services cleanly
+
+This cleans up the KeyboardInterrupt interrupt we saw from before, but our
+service is still interrupted abruptly. We cleaned up the signal subscription
+manually, but the send and receive loops were aborted. Calling *hub.stop* will
+initiate sending a *Stop* exception to all registered file descriptors and
+scheduled tasks. This will also take care of cleaning up our signal
+subscriptions.
+
+```python
+
+    h = vanilla.Hub()
+    ch = h.channel()
+
+    @h.spawn
+    def _():
+        while True:
+            try:
+                ch.send('tick')
+                h.sleep(1000)
+            except vanilla.Stop:
+                break
+        ch.send('writer done.')
+        ch.close()
+
+    @h.spawn
+    def _():
+        for item in ch:
+            print item
+        print 'reader done.'
+
+    done = h.signal.subscribe(signal.SIGINT, signal.SIGTERM)
+    done.recv()
+    h.stop()
+
+    print 'peace.'
+```
+
+    tick
+    tick
+    tick
+    ^Cwriter done.
+    reader done.
+    peace.
+
+
+This is such a common pattern that there's a convenience to do this with
+*hub.stop_on_term* .
+
+```python
+
+    h = vanilla.Hub()
+    ch = h.channel()
+
+    @h.spawn
+    def _():
+        while True:
+            try:
+                ch.send('tick')
+                h.sleep(1000)
+            except vanilla.Stop:
+                break
+        ch.send('writer done.')
+        ch.close()
+
+    @h.spawn
+    def _():
+        for item in ch:
+            print item
+        print 'reader done.'
+
+    h.stop_on_term()
+
+    print 'peace.'
 ```

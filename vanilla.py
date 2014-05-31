@@ -405,6 +405,11 @@ class Hub(object):
         except Closed:
             return
 
+    def stop_on_term(self):
+        done = self.signal.subscribe(C.SIGINT, C.SIGTERM)
+        done.recv()
+        self.stop()
+
     def main(self):
         """
         Scheduler steps:
