@@ -170,3 +170,37 @@ def test_Scheduler():
 
     assert s.pop() == ('f4', ())
     assert not s
+
+
+def test_TCP():
+    class Echo(object):
+        def __init__(self, hub):
+            self.h = hub
+            self.s = hub.tcp.listen()
+            hub.spawn(self.main)
+            self.closed = 0
+
+        def main(self):
+            while True:
+                conn = self.s.accept.recv()
+                self.h.spawn(self.worker, conn)
+
+        def worker(self, conn):
+            for route, data in conn.serve:
+                conn.reply(route, 'Echo: ' + data)
+            self.closed += 1
+
+    h = vanilla.Hub()
+    echo = Echo(h)
+    c = h.tcp.connect(echo.s.port)
+    assert 'Echo: foo' == c.call('foo').recv()
+
+    # test ping / pong
+    c.ping()
+    c.pong.wait()
+
+    # test connection closing
+    assert echo.closed == 0
+    c.stop()
+    h.sleep(1)
+    assert echo.closed == 1

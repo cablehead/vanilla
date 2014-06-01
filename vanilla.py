@@ -1,6 +1,9 @@
 import collections
 import traceback
+import logging
+import socket
 import select
+import struct
 import heapq
 import fcntl
 import cffi
@@ -11,6 +14,9 @@ import os
 
 from greenlet import getcurrent
 from greenlet import greenlet
+
+
+log = logging.getLogger(__name__)
 
 
 class Timeout(Exception):
@@ -330,6 +336,7 @@ class Hub(object):
         self.registered = {}
 
         self.signal = Signal(self)
+        self.tcp = TCP(self)
 
         self.loop = greenlet(self.main)
 
@@ -518,3 +525,277 @@ class Scheduler(object):
         item = heapq.heappop(self.queue)
         self.count -= 1
         return item.action, item.args
+
+
+# TCP ######################################################################
+
+
+class TCP(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def listen(self, port=0, host='127.0.0.1'):
+        return TCPListener(self.hub, host, port)
+
+    def connect(self, port, host='127.0.0.1'):
+        return TCPConn.connect(self.hub, host, port)
+
+
+"""
+struct.pack reference
+uint32: "I"
+uint64: 'Q"
+
+Packet
+    type|size: uint32 (I)
+        type (2 bits):
+            PUSH    = 0
+            REQUEST = 1
+            REPLY   = 2
+            OP      = 3
+        size (30 bits, 1GB)    # for type PUSH/REQUEST/REPLY
+        or OPCODE for type OP
+            1  = OP_PING
+            2  = OP_PONG
+
+    route: uint32 (I)          # optional for REQUEST and REPLY
+    buffer: bytes len(size)
+
+TCPConn supports Bi-Directional Push->Pull and Request<->Response
+"""
+
+PACKET_PUSH = 0
+PACKET_REQUEST = 1 << 30
+PACKET_REPLY = 2 << 30
+PACKET_TYPE_MASK = PACKET_REQUEST | PACKET_REPLY
+PACKET_SIZE_MASK = ~PACKET_TYPE_MASK
+
+
+class TCPConn(object):
+    @classmethod
+    def connect(klass, hub, host, port):
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((host, port))
+        conn.setblocking(0)
+        return klass(hub, conn)
+
+    def __init__(self, hub, conn):
+        self.hub = hub
+        self.conn = conn
+        self.conn.setblocking(0)
+        self.stopping = False
+        self.closed = False
+
+        # used to track calls, and incoming requests
+        self.call_route = 0
+        self.call_outstanding = {}
+
+        self.pull = hub.channel()
+
+        self.serve = hub.channel()
+        self.serve_in_progress = 0
+        ##
+
+        self.recv_ready = hub.event(True)
+        self.recv_buffer = ""
+        self.recv_closed = False
+
+        self.pong = hub.event(False)
+
+        self.events = hub.register(
+            conn.fileno(),
+            select.EPOLLIN | select.EPOLLHUP | select.EPOLLERR)
+
+        hub.spawn(self.event_loop)
+        hub.spawn(self.recv_loop)
+
+    def event_loop(self):
+        while True:
+            try:
+                fd, event = self.events.recv()
+                if event & select.EPOLLERR or event & select.EPOLLHUP:
+                    self.close()
+                    return
+                if event & select.EPOLLIN:
+                    if self.recv_closed:
+                        if not self.serve_in_progress:
+                            self.close()
+                        return
+                    self.recv_ready.set()
+            except Closed:
+                self.stop()
+
+    def recv_loop(self):
+        def recvn(n):
+            if n == 0:
+                return ""
+
+            ret = ""
+            while True:
+                m = n - len(ret)
+                if self.recv_buffer:
+                    ret += self.recv_buffer[:m]
+                    self.recv_buffer = self.recv_buffer[m:]
+
+                if len(ret) >= n:
+                    break
+
+                try:
+                    self.recv_buffer = self.conn.recv(max(m, 4096))
+                except socket.error, e:
+                    # resource unavailable, block until it is
+                    if e.errno == 11:  # EAGAIN
+                        self.recv_ready.clear().wait()
+                        continue
+                    raise
+
+                if not self.recv_buffer:
+                    raise socket.error("closing connection")
+
+            return ret
+
+        while True:
+            try:
+                typ_size, = struct.unpack('<I', recvn(4))
+
+                # handle ping / pong
+                if PACKET_TYPE_MASK & typ_size == PACKET_TYPE_MASK:
+                    if typ_size & PACKET_SIZE_MASK == 1:
+                        # ping received, send pong
+                        self._send(struct.pack('<I', PACKET_TYPE_MASK | 2))
+                    else:
+                        # pong recieved
+                        self.pong.set()
+                        self.pong.clear()
+                    continue
+
+                if PACKET_TYPE_MASK & typ_size:
+                    route, = struct.unpack('<I', recvn(4))
+
+                data = recvn(typ_size & PACKET_SIZE_MASK)
+
+                if typ_size & PACKET_REQUEST:
+                    self.serve_in_progress += 1
+                    self.serve.send((route, data))
+                    continue
+
+                if typ_size & PACKET_REPLY:
+                    if route not in self.call_outstanding:
+                        log.warning("Missing route: %s" % route)
+                        continue
+                    self.call_outstanding[route].send(data)
+                    del self.call_outstanding[route]
+                    if not self.call_outstanding and self.stopping:
+                        self.close()
+                        break
+                    continue
+
+                # push packet
+                self.pull.send(data)
+                continue
+
+            except Exception, e:
+                if type(e) != socket.error:
+                    log.exception(e)
+                self.recv_closed = True
+                self.stop()
+                break
+
+    def push(self, data):
+        self.send(0, PACKET_PUSH, data)
+
+    def call(self, data):
+        # TODO: handle wrap around
+        self.call_route += 1
+        self.call_outstanding[self.call_route] = self.hub.channel()
+        self.send(self.call_route, PACKET_REQUEST, data)
+        return self.call_outstanding[self.call_route]
+
+    def reply(self, route, data):
+        self.send(route, PACKET_REPLY, data)
+        self.serve_in_progress -= 1
+        if not self.serve_in_progress and self.stopping:
+            self.close()
+
+    def ping(self):
+        self._send(struct.pack('<I', PACKET_TYPE_MASK | 1))
+
+    def send(self, route, typ, data):
+        assert len(data) < 2**30, "Data must be less than 1Gb"
+
+        # TODO: is there away to avoid the duplication of data here?
+        if PACKET_TYPE_MASK & typ:
+            message = struct.pack('<II', typ | len(data), route) + data
+        else:
+            message = struct.pack('<I', typ | len(data)) + data
+
+        self._send(message)
+
+    def _send(self, message):
+        try:
+            self.conn.send(message)
+        except Exception, e:
+            if type(e) != socket.error:
+                log.exception(e)
+            self.close()
+            raise
+
+    def stop(self):
+        if self.call_outstanding or self.serve_in_progress:
+            self.stopping = True
+            # if we aren't waiting for a reply, shutdown our read pipe
+            if not self.call_outstanding:
+                self.hub.unregister(self.conn.fileno())
+                self.conn.shutdown(socket.SHUT_RD)
+            return
+
+        # nothing in progress, just close
+        self.close()
+
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            self.hub.unregister(self.conn.fileno())
+            try:
+                self.conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            self.conn.close()
+            for ch in self.call_outstanding.values():
+                ch.send(Exception("connection closed."))
+            self.serve.close()
+
+
+class TCPListener(object):
+    def __init__(self, hub, host, port):
+        self.hub = hub
+        self.sock = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+        s.listen(socket.SOMAXCONN)
+        s.setblocking(0)
+
+        self.port = s.getsockname()[1]
+        self.accept = hub.channel()
+
+        self.ch = hub.register(s.fileno(), select.EPOLLIN)
+        hub.spawn(self.loop)
+
+    def loop(self):
+        while True:
+            try:
+                self.ch.recv()
+                conn, host = self.sock.accept()
+                conn = TCPConn(self.hub, conn)
+                self.accept.send(conn)
+            except Stop:
+                self.stop()
+                return
+
+    def stop(self):
+        self.hub.unregister(self.sock.fileno())
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        self.sock.close()
