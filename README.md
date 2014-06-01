@@ -72,7 +72,6 @@ girlfriend in the world, God and Mum.
 [Littleinc]:         http://littleinc.com                  "Littleinc"
 [this project]:      https://github.com/cablehead/vanilla  "Vanilla"
 
-### PS.
+##### PS.
 
-<sub>In case it's not apparent, I'm an atheist.. I'm just trying to wind up
-Alison, Ryan.</sub>
+I'm an atheist.. I'm just trying to wind up Alison, Ryan.
