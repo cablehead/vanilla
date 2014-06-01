@@ -30,9 +30,9 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   passing as core building blocks.
 
 - **utilitarian**: a swiss army knife for assembling services. Vanilla
-  abstracts signal handling; thread pools; process creation, control and
-  inter-communication; multiplexing push/pull and request/reply message passing
-  patterns over TCP and UDP
+  abstracts multiplexing push/pull and request/reply message passing patterns
+  over TCP and UDP; signal handling; thread pools; process creation, control and
+  inter-communication
 
 - **predictable**: Vanilla's concurrency model is based on coroutines or green
   threads, via the Greenlet package. Arguably this model allows a more natural
