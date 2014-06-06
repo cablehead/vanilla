@@ -216,8 +216,8 @@ def test_HTTP():
 
     conn = h.http.connect('http://httpbin.org')
 
-    ch1 = conn.request('GET', '/get?foo=bar')
-    ch2 = conn.request('GET', '/get?foo=bar2')
+    ch1 = conn.get('/get', params={'foo': 'bar'})
+    ch2 = conn.get('/get', params={'foo': 'bar2'})
 
     status, headers, body = list(ch1)
     assert status.code == 200

@@ -928,11 +928,21 @@ class HTTPConn(object):
             headers[k] = v
         return headers
 
-    def request(self, method, path='/', headers=None, version=HTTP_VERSION):
+    def request(
+            self,
+            method,
+            path='/',
+            params=None,
+            headers=None,
+            version=HTTP_VERSION):
+
         request_headers = {}
         request_headers.update(self.default_headers)
         if headers:
             request_headers.update(headers)
+
+        if params:
+            path += '?' + urllib.urlencode(params)
 
         request = '%s %s %s\r\n' % (method, path, version)
         headers = '\r\n'.join(
@@ -943,3 +953,6 @@ class HTTPConn(object):
         ch = self.hub.channel()
         self.responses.append(ch)
         return ch
+
+    def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
+        return self.request('GET', path, params, headers, version)
