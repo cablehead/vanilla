@@ -828,6 +828,12 @@ class Insensitive(object):
     def __repr__(self):
         return repr(dict(self.store.itervalues()))
 
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
 
 class HTTP(object):
     def __init__(self, hub):
@@ -877,17 +883,27 @@ class HTTPConn(object):
     def receiver(self):
         while True:
             status = self.read_status()
-
             ch = self.responses.popleft()
             ch.send(status)
 
             headers = self.read_headers()
             ch.send(headers)
 
-            # TODO:
-            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-            body = self.read_length(int(headers['content-length']))
-            ch.send(body)
+            if headers.get('transfer-encoding') == 'chunked':
+                while True:
+                    length = int(self.read_line())
+                    if length:
+                        chunk = self.read_length(length)
+                        ch.send(chunk)
+                    assert self.read_length(2) == '\r\n'
+                    if not length:
+                        break
+            else:
+                # TODO:
+                # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
+                body = self.read_length(int(headers['content-length']))
+                ch.send(body)
+
             ch.close()
 
     def read_more(self):
