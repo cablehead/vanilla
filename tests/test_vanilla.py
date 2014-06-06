@@ -241,7 +241,7 @@ def test_HTTP():
     took, start = time.time() - start, time.time()
     assert took < 0.0002
 
-    # check remainding chunks come every second
+    # check remaining chunks come every second
     for item in drip:
         took, start = time.time() - start, time.time()
         assert item == '*'
