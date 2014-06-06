@@ -1,6 +1,8 @@
 import collections
 import traceback
+import urlparse
 import logging
+import urllib
 import socket
 import select
 import struct
@@ -14,6 +16,9 @@ import os
 
 from greenlet import getcurrent
 from greenlet import greenlet
+
+
+__version__ = '0.0.1'
 
 
 log = logging.getLogger(__name__)
@@ -337,6 +342,7 @@ class Hub(object):
 
         self.signal = Signal(self)
         self.tcp = TCP(self)
+        self.http = HTTP(self)
 
         self.loop = greenlet(self.main)
 
@@ -799,3 +805,141 @@ class TCPListener(object):
         except:
             pass
         self.sock.close()
+
+
+# HTTP #####################################################################
+
+
+HTTP_VERSION = 'HTTP/1.1'
+
+
+class Insensitive(object):
+    Value = collections.namedtuple('Value', ['key', 'value'])
+
+    def __init__(self):
+        self.store = {}
+
+    def __setitem__(self, key, value):
+        self.store[key.lower()] = self.Value(key, value)
+
+    def __getitem__(self, key):
+        return self.store[key.lower()].value
+
+    def __repr__(self):
+        return repr(dict(self.store.itervalues()))
+
+
+class HTTP(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def connect(self, url):
+        return HTTPConn.connect(self.hub, url)
+
+
+class HTTPConn(object):
+    Status = collections.namedtuple('Status', ['version', 'code', 'message'])
+
+    @classmethod
+    def connect(klass, hub, url):
+        parsed = urlparse.urlsplit(url)
+        assert parsed.query == ''
+        assert parsed.fragment == ''
+        host, port = urllib.splitnport(parsed.netloc, 80)
+
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((host, port))
+
+        self = klass(hub, conn)
+
+        self.agent = 'vanilla/%s' % __version__
+
+        self.default_headers = dict([
+            ('Accept', '*/*'),
+            ('User-Agent', self.agent),
+            ('Host', parsed.netloc), ])
+            # ('Connection', 'Close'), ])
+        return self
+
+    def __init__(self, hub, conn):
+        self.hub = hub
+
+        self.conn = conn
+        self.conn.setblocking(0)
+        self.ready = self.hub.register(
+            self.conn.fileno(),
+            select.EPOLLIN | select.EPOLLHUP | select.EPOLLERR)
+
+        self.buff = ''
+        self.responses = collections.deque()
+        self.hub.spawn(self.receiver)
+
+    def receiver(self):
+        while True:
+            status = self.read_status()
+
+            ch = self.responses.popleft()
+            ch.send(status)
+
+            headers = self.read_headers()
+            ch.send(headers)
+
+            # TODO:
+            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
+            body = self.read_length(int(headers['content-length']))
+            ch.send(body)
+            ch.close()
+
+    def read_more(self):
+        fd, event = self.ready.recv()
+        if event & select.EPOLLERR or event & select.EPOLLHUP:
+            raise Exception('EPOLLERR or EPOLLHUP')
+        self.buff += self.conn.recv(4096)
+
+    def read_line(self):
+        while True:
+            try:
+                line, remainder = self.buff.split('\r\n', 1)
+                self.buff = remainder
+                return line
+            except ValueError:
+                self.read_more()
+
+    def read_length(self, n):
+        while True:
+            if len(self.buff) >= n:
+                ret = self.buff[:n]
+                self.buff = self.buff[n:]
+                return ret
+            self.read_more()
+
+    def read_status(self):
+        version, code, message = self.read_line().split(' ', 2)
+        code = int(code)
+        return self.Status(version, code, message)
+
+    def read_headers(self):
+        headers = Insensitive()
+        while True:
+            line = self.read_line()
+            if not line:
+                break
+            k, v = line.split(': ', 1)
+            headers[k] = v
+        return headers
+
+    def request(self, method, path='/', headers=None, version=HTTP_VERSION):
+        request_headers = {}
+        request_headers.update(self.default_headers)
+        if headers:
+            request_headers.update(headers)
+
+        request = '%s %s %s\r\n' % (method, path, version)
+        headers = '\r\n'.join(
+            '%s: %s' % (k, v) for k, v in request_headers.iteritems())
+
+        self.conn.sendall(request+headers+'\r\n'+'\r\n')
+
+        ch = self.hub.channel()
+        self.responses.append(ch)
+        return ch

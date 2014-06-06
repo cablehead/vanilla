@@ -1,4 +1,7 @@
 import signal
+import json
+
+
 import pytest
 
 
@@ -204,3 +207,22 @@ def test_TCP():
     c.stop()
     h.sleep(1)
     assert echo.closed == 1
+
+
+def test_HTTP():
+    # TODO: Just using httpbin until the HTTP Server side of Vanilla is cleaned
+    # up. There should be an integration suite that could still use httpbin.
+    h = vanilla.Hub()
+
+    conn = h.http.connect('http://httpbin.org')
+
+    ch1 = conn.request('GET', '/get?foo=bar')
+    ch2 = conn.request('GET', '/get?foo=bar2')
+
+    status, headers, body = list(ch1)
+    assert status.code == 200
+    assert json.loads(body)['args'] == {'foo': 'bar'}
+
+    status, headers, body = list(ch2)
+    assert status.code == 200
+    assert json.loads(body)['args'] == {'foo': 'bar2'}
