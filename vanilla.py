@@ -1,5 +1,6 @@
 import collections
 import traceback
+import functools
 import urlparse
 import logging
 import urllib
@@ -96,6 +97,11 @@ def init_C():
 
         #define EAGAIN ...
 
+        #define EPOLLIN ...
+        #define EPOLLERR ...
+        #define EPOLLHUP ...
+        #define EPOLLRDHUP ...
+
         #define SIGALRM ...
         #define SIGINT ...
         #define SIGTERM ...
@@ -112,6 +118,7 @@ def init_C():
         #include <unistd.h>
         #include <sys/eventfd.h>
         #include <sys/signalfd.h>
+        #include <sys/epoll.h>
         #include <signal.h>
     """)
 
@@ -124,7 +131,7 @@ def init_C():
 
     @Cdot
     def sigset(*nums):
-        s = ffi.new("sigset_t *")
+        s = ffi.new('sigset_t *')
         assert not C.sigemptyset(s)
 
         for num in nums:
@@ -247,7 +254,7 @@ class Channel(object):
                 raise StopIteration
 
     def close(self):
-        self.send(Closed("closed"))
+        self.send(Closed('closed'))
         self.closed = True
 
 
@@ -262,8 +269,8 @@ class Signal(object):
     def start(self, fd):
         self.fd = fd
 
-        info = C.ffi.new("struct signalfd_siginfo *")
-        size = C.ffi.sizeof("struct signalfd_siginfo")
+        info = C.ffi.new('struct signalfd_siginfo *')
+        size = C.ffi.sizeof('struct signalfd_siginfo')
 
         ready = self.hub.register(fd, select.EPOLLIN)
 
@@ -368,7 +375,7 @@ class Hub(object):
 
         # TODO: clean up stopped handling here
         if self.stopped:
-            raise Closed("closed")
+            raise Closed('closed')
 
         return resume
 
@@ -399,7 +406,11 @@ class Hub(object):
 
     def unregister(self, fd):
         if fd in self.registered:
-            self.epoll.unregister(fd)
+            try:
+                # TODO: investigate why this could error
+                self.epoll.unregister(fd)
+            except:
+                pass
             self.registered[fd].close()
             del self.registered[fd]
 
@@ -603,7 +614,7 @@ class TCPConn(object):
         ##
 
         self.recv_ready = hub.event(True)
-        self.recv_buffer = ""
+        self.recv_buffer = ''
         self.recv_closed = False
 
         self.pong = hub.event(False)
@@ -634,9 +645,9 @@ class TCPConn(object):
     def recv_loop(self):
         def recvn(n):
             if n == 0:
-                return ""
+                return ''
 
-            ret = ""
+            ret = ''
             while True:
                 m = n - len(ret)
                 if self.recv_buffer:
@@ -656,7 +667,7 @@ class TCPConn(object):
                     raise
 
                 if not self.recv_buffer:
-                    raise socket.error("closing connection")
+                    raise socket.error('closing connection')
 
             return ret
 
@@ -687,7 +698,7 @@ class TCPConn(object):
 
                 if typ_size & PACKET_REPLY:
                     if route not in self.call_outstanding:
-                        log.warning("Missing route: %s" % route)
+                        log.warning('Missing route: %s' % route)
                         continue
                     self.call_outstanding[route].send(data)
                     del self.call_outstanding[route]
@@ -727,7 +738,7 @@ class TCPConn(object):
         self._send(struct.pack('<I', PACKET_TYPE_MASK | 1))
 
     def send(self, route, typ, data):
-        assert len(data) < 2**30, "Data must be less than 1Gb"
+        assert len(data) < 2**30, 'Data must be less than 1Gb'
 
         # TODO: is there away to avoid the duplication of data here?
         if PACKET_TYPE_MASK & typ:
@@ -768,7 +779,7 @@ class TCPConn(object):
                 pass
             self.conn.close()
             for ch in self.call_outstanding.values():
-                ch.send(Exception("connection closed."))
+                ch.send(Exception('connection closed.'))
             self.serve.close()
 
 
@@ -839,24 +850,130 @@ class HTTP(object):
     def __init__(self, hub):
         self.hub = hub
 
+    def listen(self, port=0, host='127.0.0.1', server=None):
+        if server:
+            return HTTPListener(self.hub, host, port, server)
+        return functools.partial(HTTPListener, self.hub, host, port)
+
     def connect(self, url):
-        return HTTPConn.connect(self.hub, url)
+        return HTTPClient(self.hub, url)
 
 
-class HTTPConn(object):
+class Stream(object):
+    def __init__(self, hub, conn):
+        self.hub = hub
+        self.conn = conn
+        self.fileno = conn.fileno()
+
+        self.events = hub.register(
+            conn.fileno(),
+            C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
+
+        self.hub.spawn(self.loop)
+        self.pending = self.hub.channel()
+
+    def loop(self):
+        while True:
+            try:
+                fd, event = self.events.recv()
+                if event & select.EPOLLERR or event & select.EPOLLHUP:
+                    raise Stop
+
+                # read conn until exhaustion
+                while True:
+                    try:
+                        data = self.conn.recv(16384)
+                    except socket.error, e:
+                        # resource unavailable, block until it is
+                        if e.errno == 11:  # EAGAIN
+                            break
+                        raise Stop
+
+                    if not data:
+                        raise Stop
+
+                    self.pending.send(data)
+
+            except Stop:
+                self.close()
+                return
+
+    def close(self):
+        self.hub.unregister(self.fileno)
+        try:
+            self.conn.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        self.conn.close()
+
+    def recv_bytes(self, n):
+        if n == 0:
+            return ''
+
+        received = 0
+        segments = []
+        while received < n:
+            segment = self.pending.recv()
+            segments.append(segment)
+            received += len(segment)
+
+        # if we've received too much, break the last segment and return the
+        # additional portion to pending
+        overage = received - n
+        if overage:
+            self.pending.items.appendleft(segments[-1][-1*(overage):])
+            segments[-1] = segments[-1][:-1*(overage)]
+
+        return ''.join(segments)
+
+    def recv_partition(self, sep):
+        received = ''
+        while True:
+            received += self.pending.recv()
+            keep, matched, additonal = received.partition(sep)
+            if matched:
+                if additonal:
+                    self.pending.items.appendleft(additonal)
+                return keep
+
+
+class HTTPCore(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def recv_bytes(self, n):
+        return self.stream.recv_bytes(n)
+
+    def recv_line(self):
+        return self.stream.recv_partition('\r\n')
+
+    def recv_headers(self):
+        headers = Insensitive()
+        while True:
+            line = self.recv_line()
+            if not line:
+                break
+            k, v = line.split(': ', 1)
+            headers[k] = v
+        return headers
+
+
+class HTTPClient(object):
     Status = collections.namedtuple('Status', ['version', 'code', 'message'])
 
-    @classmethod
-    def connect(klass, hub, url):
+    def __init__(self, hub, url):
+        self.hub = hub
+
         parsed = urlparse.urlsplit(url)
         assert parsed.query == ''
         assert parsed.fragment == ''
         host, port = urllib.splitnport(parsed.netloc, 80)
 
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.connect((host, port))
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.conn.connect((host, port))
+        self.conn.setblocking(0)
 
-        self = klass(hub, conn)
+        self.http = HTTPCore(Stream(hub, self.conn))
 
         self.agent = 'vanilla/%s' % __version__
 
@@ -865,84 +982,38 @@ class HTTPConn(object):
             ('User-Agent', self.agent),
             ('Host', parsed.netloc), ])
             # ('Connection', 'Close'), ])
-        return self
 
-    def __init__(self, hub, conn):
-        self.hub = hub
-
-        self.conn = conn
-        self.conn.setblocking(0)
-        self.ready = self.hub.register(
-            self.conn.fileno(),
-            select.EPOLLIN | select.EPOLLHUP | select.EPOLLERR)
-
-        self.buff = ''
         self.responses = collections.deque()
-        self.hub.spawn(self.receiver)
+        hub.spawn(self.receiver)
 
     def receiver(self):
         while True:
-            status = self.read_status()
+            version, code, message = self.http.recv_line().split(' ', 2)
+            code = int(code)
+            status = self.Status(version, code, message)
+
             ch = self.responses.popleft()
             ch.send(status)
 
-            headers = self.read_headers()
+            headers = self.http.recv_headers()
             ch.send(headers)
 
             if headers.get('transfer-encoding') == 'chunked':
                 while True:
-                    length = int(self.read_line())
+                    length = int(self.http.recv_line())
                     if length:
-                        chunk = self.read_length(length)
+                        chunk = self.http.recv_bytes(length)
                         ch.send(chunk)
-                    assert self.read_length(2) == '\r\n'
+                    assert self.http.recv_bytes(2) == '\r\n'
                     if not length:
                         break
             else:
                 # TODO:
                 # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-                body = self.read_length(int(headers['content-length']))
+                body = self.http.recv_bytes(int(headers['content-length']))
                 ch.send(body)
 
             ch.close()
-
-    def read_more(self):
-        fd, event = self.ready.recv()
-        if event & select.EPOLLERR or event & select.EPOLLHUP:
-            raise Exception('EPOLLERR or EPOLLHUP')
-        self.buff += self.conn.recv(4096)
-
-    def read_line(self):
-        while True:
-            try:
-                line, remainder = self.buff.split('\r\n', 1)
-                self.buff = remainder
-                return line
-            except ValueError:
-                self.read_more()
-
-    def read_length(self, n):
-        while True:
-            if len(self.buff) >= n:
-                ret = self.buff[:n]
-                self.buff = self.buff[n:]
-                return ret
-            self.read_more()
-
-    def read_status(self):
-        version, code, message = self.read_line().split(' ', 2)
-        code = int(code)
-        return self.Status(version, code, message)
-
-    def read_headers(self):
-        headers = Insensitive()
-        while True:
-            line = self.read_line()
-            if not line:
-                break
-            k, v = line.split(': ', 1)
-            headers[k] = v
-        return headers
 
     def request(
             self,
@@ -972,3 +1043,62 @@ class HTTPConn(object):
 
     def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
         return self.request('GET', path, params, headers, version)
+
+
+class HTTPListener(object):
+    def __init__(self, hub, host, port, server):
+        self.hub = hub
+
+        self.sock = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+        s.listen(socket.SOMAXCONN)
+        s.setblocking(0)
+
+        self.port = s.getsockname()[1]
+        self.server = server
+
+        hub.spawn(self.accept)
+
+    def accept(self):
+        ready = self.hub.register(self.sock.fileno(), select.EPOLLIN)
+        while True:
+            try:
+                ready.recv()
+                conn, host = self.sock.accept()
+                self.hub.spawn(self.serve, conn)
+            except Stop:
+                self.stop()
+                return
+
+    def serve(self, conn):
+        conn.setblocking(0)
+        http = HTTPCore(Stream(self.hub, conn))
+
+        #TODO: support http keep alives
+
+        class Request(object):
+            def __init__(self, method, path, version):
+                self.method = method
+                self.path = path
+                self.version = version
+
+        request = Request(*http.recv_line().split(' ', 2))
+        request.headers = http.recv_headers()
+
+        data = self.server(request)
+
+        status = 'HTTP/1.1 200 OK\r\n'
+        headers = {'Content-Length': len(data)}
+        headers = '\r\n'.join(
+            '%s: %s' % (k, v) for k, v in headers.iteritems())
+        conn.sendall(status+headers+'\r\n'+'\r\n'+data)
+        conn.close()
+
+    def stop(self):
+        self.hub.unregister(self.sock.fileno())
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        self.sock.close()

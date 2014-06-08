@@ -1,3 +1,4 @@
+import socket
 import signal
 import json
 import time
@@ -210,7 +211,7 @@ def test_TCP():
     assert echo.closed == 1
 
 
-def test_HTTP():
+def test_HTTPClient():
     # TODO: Just using httpbin until the HTTP Server side of Vanilla is cleaned
     # up. There should be an integration suite that could still use httpbin.
     h = vanilla.Hub()
@@ -239,7 +240,7 @@ def test_HTTP():
     # the first chunk also comes immediately
     assert drip.recv() == '*'
     took, start = time.time() - start, time.time()
-    assert took < 0.0002
+    assert took < 0.002
 
     # check remaining chunks come every second
     for item in drip:
@@ -254,3 +255,56 @@ def test_HTTP():
     status, headers, body = list(get2)
     assert status.code == 200
     assert json.loads(body)['args'] == {'foo': 'bar2'}
+
+
+def test_Stream():
+    h = vanilla.Hub()
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(('127.0.0.1', 0))
+    s.listen(socket.SOMAXCONN)
+
+    port = s.getsockname()[1]
+
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect(('127.0.0.1', port))
+
+    conn, host = s.accept()
+    conn.setblocking(0)
+    stream = vanilla.Stream(h, conn)
+
+    def chunks(l, n):
+        """
+        Yield successive n-sized chunks from l.
+        """
+        for i in xrange(0, len(l), n):
+            yield l[i:i+n]
+
+    @h.spawn
+    def _():
+        for chunk in chunks(('12'*8)+'foo\r\nbar\r\n\r\n', 3):
+            h.sleep(10)
+            client.sendall(chunk)
+
+    assert stream.recv_bytes(5) == '12121'
+    assert stream.recv_bytes(5) == '21212'
+    assert stream.recv_bytes(5) == '12121'
+    assert stream.recv_partition('\r\n') == '2foo'
+    assert stream.recv_partition('\r\n') == 'bar'
+    assert stream.recv_partition('\r\n') == ''
+
+    # h.stop_on_term()
+
+
+def test_HTTP():
+    h = vanilla.Hub()
+
+    @h.http.listen(8000)
+    def serve(request):
+        return 'Hi Toby'
+
+    response = h.http.connect('http://localhost:8000').get('/')
+    assert response.recv().code == 200
+    response.recv()
+    assert response.recv() == 'Hi Toby'
