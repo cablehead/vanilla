@@ -1077,22 +1077,60 @@ class HTTPListener(object):
 
         #TODO: support http keep alives
 
-        class Request(object):
-            def __init__(self, method, path, version):
-                self.method = method
-                self.path = path
-                self.version = version
+        Request = collections.namedtuple(
+            'Request', ['method', 'path', 'version', 'headers'])
 
-        request = Request(*http.recv_line().split(' ', 2))
-        request.headers = http.recv_headers()
+        class Response(object):
+            def __init__(self, out):
+                self.status = 200
+                self.headers = {}
+                self.out = out
 
-        data = self.server(request)
+            def send(self, data):
+                self.out.send(data)
 
-        status = 'HTTP/1.1 200 OK\r\n'
-        headers = {'Content-Length': len(data)}
-        headers = '\r\n'.join(
-            '%s: %s' % (k, v) for k, v in headers.iteritems())
-        conn.sendall(status+headers+'\r\n'+'\r\n'+data)
+            def end(self, data):
+                self.data = data or ''
+                self.out.close()
+
+        method, path, version = http.recv_line().split(' ', 2)
+        headers = http.recv_headers()
+        request = Request(method, path, version, headers)
+
+        out = self.hub.channel()
+        response = Response(out)
+
+        def send_headers(status, headers):
+            # TODO: support setting status/ headers
+            status = 'HTTP/1.1 200 OK\r\n'
+            headers = '\r\n'.join(
+                '%s: %s' % (k, v) for k, v in headers.iteritems())
+            conn.sendall(status+headers+'\r\n'+'\r\n')
+
+        @self.hub.spawn
+        def _():
+            data = self.server(request, response)
+            response.end(data)
+
+        headers_sent = False
+
+        for item in out:
+            if not headers_sent:
+                headers_sent = True
+                response.headers['Transfer-Encoding'] = 'chunked'
+                send_headers(response.status, response.headers)
+            conn.sendall('%s\r\n%s\r\n' % (len(item), item))
+
+        if not headers_sent:
+            response.headers['Content-Length'] = len(response.data)
+            send_headers(response.status, response.headers)
+            conn.sendall(response.data)
+        else:
+            if response.data:
+                conn.sendall(
+                    '%s\r\n%s\r\n' % (len(response.data), response.data))
+            conn.sendall('0\r\n\r\n')
+
         conn.close()
 
     def stop(self):

@@ -297,14 +297,46 @@ def test_Stream():
     # h.stop_on_term()
 
 
-def test_HTTP():
-    h = vanilla.Hub()
+class TestHTTP(object):
+    def test_get_basic(self):
+        h = vanilla.Hub()
 
-    @h.http.listen(8000)
-    def serve(request):
-        return 'Hi Toby'
+        @h.http.listen(8000)
+        def serve(request, response):
+            if len(request.path) > 1:
+                return request.path[1:]
 
-    response = h.http.connect('http://localhost:8000').get('/')
-    assert response.recv().code == 200
-    response.recv()
-    assert response.recv() == 'Hi Toby'
+        response = h.http.connect('http://localhost:8000').get('/')
+        assert response.recv().code == 200
+        response.recv()
+        assert response.recv() == ''
+
+        response = h.http.connect('http://localhost:8000').get('/toby')
+        assert response.recv().code == 200
+        response.recv()
+        assert response.recv() == 'toby'
+
+        h.stop()
+
+    def test_get_chunked(self):
+        h = vanilla.Hub()
+
+        @h.http.listen(8000)
+        def serve(request, response):
+            for i in xrange(3):
+                h.sleep(10)
+                response.send(str(i))
+            if len(request.path) > 1:
+                return request.path[1:]
+
+        response = h.http.connect('http://localhost:8000').get('/')
+        got = list(response)
+        assert got[0].code == 200
+        assert got[2:] == ['0', '1', '2']
+
+        response = h.http.connect('http://localhost:8000').get('/peace')
+        got = list(response)
+        assert got[0].code == 200
+        assert got[2:] == ['0', '1', '2', 'peace']
+
+        h.stop()
