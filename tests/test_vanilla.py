@@ -301,17 +301,19 @@ class TestHTTP(object):
     def test_get_basic(self):
         h = vanilla.Hub()
 
-        @h.http.listen(8000)
+        @h.http.listen()
         def serve(request, response):
             if len(request.path) > 1:
                 return request.path[1:]
 
-        response = h.http.connect('http://localhost:8000').get('/')
+        uri = 'http://localhost:%s' % serve.port
+
+        response = h.http.connect(uri).get('/')
         assert response.recv().code == 200
         response.recv()
         assert response.recv() == ''
 
-        response = h.http.connect('http://localhost:8000').get('/toby')
+        response = h.http.connect(uri).get('/toby')
         assert response.recv().code == 200
         response.recv()
         assert response.recv() == 'toby'
@@ -321,7 +323,7 @@ class TestHTTP(object):
     def test_get_chunked(self):
         h = vanilla.Hub()
 
-        @h.http.listen(8000)
+        @h.http.listen()
         def serve(request, response):
             for i in xrange(3):
                 h.sleep(10)
@@ -329,12 +331,14 @@ class TestHTTP(object):
             if len(request.path) > 1:
                 return request.path[1:]
 
-        response = h.http.connect('http://localhost:8000').get('/')
+        uri = 'http://localhost:%s' % serve.port
+
+        response = h.http.connect(uri).get('/')
         got = list(response)
         assert got[0].code == 200
         assert got[2:] == ['0', '1', '2']
 
-        response = h.http.connect('http://localhost:8000').get('/peace')
+        response = h.http.connect(uri).get('/peace')
         got = list(response)
         assert got[0].code == 200
         assert got[2:] == ['0', '1', '2', 'peace']
