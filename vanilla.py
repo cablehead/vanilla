@@ -1119,7 +1119,7 @@ class HTTPListener(object):
                 headers_sent = True
                 response.headers['Transfer-Encoding'] = 'chunked'
                 send_headers(response.status, response.headers)
-            conn.sendall('%s\r\n%s\r\n' % (len(item), item))
+            conn.sendall('%s\r\n%s\r\n' % (hex(len(item))[2:], item))
 
         if not headers_sent:
             response.headers['Content-Length'] = len(response.data)
@@ -1128,7 +1128,8 @@ class HTTPListener(object):
         else:
             if response.data:
                 conn.sendall(
-                    '%s\r\n%s\r\n' % (len(response.data), response.data))
+                    '%s\r\n%s\r\n' % (
+                        hex(len(response.data))[2:], response.data))
             conn.sendall('0\r\n\r\n')
 
         conn.close()
