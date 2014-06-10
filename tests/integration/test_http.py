@@ -1,5 +1,6 @@
 import json
 import time
+import os
 
 
 import vanilla
@@ -49,3 +50,32 @@ def test_HTTPClient():
     status, headers, body = list(get2)
     assert status.code == 200
     assert json.loads(body)['args'] == {'foo': 'bar2'}
+
+
+def test_WebsocketClient():
+    from vanilla import Websocket
+
+    h = vanilla.Hub()
+
+    mask = os.urandom(4)
+    message = 'Hi Toby'
+    assert Websocket.mask(mask, Websocket.mask(mask, message)) == message
+
+    conn = h.http.connect('ws://echo.websocket.org')
+    ws = conn.websocket('/')
+
+    message = 'x' * 125
+    ws.send(message)
+    assert ws.recv() == message
+
+    message = 'x' * 126
+    ws.send(message)
+    assert ws.recv() == message
+
+    message = 'x' * 65535
+    ws.send(message)
+    assert ws.recv() == message
+
+    message = 'x' * 65536
+    ws.send(message)
+    assert ws.recv() == message

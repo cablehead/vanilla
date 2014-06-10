@@ -2,14 +2,17 @@ import collections
 import traceback
 import functools
 import urlparse
+import hashlib
 import logging
 import urllib
+import base64
 import socket
 import select
 import struct
 import heapq
 import fcntl
 import cffi
+import uuid
 import time
 import sys
 import os
@@ -958,6 +961,72 @@ class HTTPCore(object):
         return headers
 
 
+class Websocket(object):
+    MASK = FIN = 0b10000000
+    RSV = 0b01110000
+    OP = 0b00001111
+    PAYLOAD = 0b01111111
+
+    OP_TEXT = 0x1
+    OP_BIN = 0x2
+    OP_CLOSE = 0x8
+    OP_PING = 0x9
+    OP_PONG = 0xA
+
+    SANITY = 1024**3  # limit fragments to 1GB
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    @staticmethod
+    def mask(mask, s):
+        mask_bytes = [ord(c) for c in mask]
+        return ''.join(
+            chr(mask_bytes[i % 4] ^ ord(c)) for i, c in enumerate(s))
+
+    def send(self, data):
+        mask = os.urandom(4)
+        length = len(data)
+
+        if length <= 125:
+            header = struct.pack(
+                '!BB',
+                Websocket.OP_TEXT | Websocket.FIN,
+                length | Websocket.MASK)
+
+        elif length <= 65535:
+            header = struct.pack(
+                '!BBH',
+                Websocket.OP_TEXT | Websocket.FIN,
+                126 | Websocket.MASK,
+                length)
+        else:
+            assert length < Websocket.SANITY, \
+                "Frames limited to 1Gb for sanity"
+            header = struct.pack(
+                '!BBQ',
+                Websocket.OP_TEXT | Websocket.FIN,
+                127 | Websocket.MASK,
+                length)
+
+        message = header + mask + self.mask(mask, data)
+        self.stream.conn.sendall(message)
+
+    def recv(self):
+        b1, length, = struct.unpack('!BB', self.stream.recv_bytes(2))
+        assert b1 & Websocket.FIN, "Fragmented messages not supported yet"
+        assert not length & Websocket.MASK
+
+        if length == 126:
+            length, = struct.unpack('!H', self.stream.recv_bytes(2))
+
+        elif length == 127:
+            length, = struct.unpack('!Q', self.stream.recv_bytes(8))
+
+        assert length < Websocket.SANITY, "Frames limited to 1Gb for sanity"
+        return self.stream.recv_bytes(length)
+
+
 class HTTPClient(object):
     Status = collections.namedtuple('Status', ['version', 'code', 'message'])
 
@@ -997,6 +1066,12 @@ class HTTPClient(object):
 
             headers = self.http.recv_headers()
             ch.send(headers)
+
+            # If our connection is upgraded, shutdown the HTTP receive loop, as
+            # this is no longer a HTTP connection.
+            if headers.get('connection') == 'Upgrade':
+                ch.close()
+                return
 
             if headers.get('transfer-encoding') == 'chunked':
                 while True:
@@ -1043,6 +1118,32 @@ class HTTPClient(object):
 
     def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
         return self.request('GET', path, params, headers, version)
+
+    def websocket(
+            self, path='/', params=None, headers=None, version=HTTP_VERSION):
+
+        key = base64.b64encode(uuid.uuid4().bytes)
+
+        headers = headers or {}
+        headers.update({
+            'Upgrade': 'WebSocket',
+            'Connection': 'Upgrade',
+            'Sec-WebSocket-Key': key,
+            'Sec-WebSocket-Version': 13, })
+
+        response = self.request('GET', path, params, headers, version)
+
+        status = response.recv()
+        assert status.code == 101
+
+        headers = response.recv()
+        assert headers['upgrade'].lower() == 'websocket'
+
+        value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        accept = base64.b64encode(hashlib.sha1(value).digest())
+        assert headers['sec-webSocket-accept'] == accept
+
+        return Websocket(self.http.stream)
 
 
 class HTTPListener(object):
