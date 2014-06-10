@@ -344,3 +344,23 @@ class TestHTTP(object):
         assert got[2:] == ['0', '1', '2', 'peace']
 
         h.stop()
+
+    def test_get_drop(self):
+        # TODO
+        return
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            for i in xrange(3):
+                h.sleep(10)
+                response.send(str(i))
+
+        uri = 'http://localhost:%s' % serve.port
+
+        client = h.http.connect(uri)
+        response = client.get('/')
+        assert response.recv().code == 200
+        client.conn.close()
+
+        h.sleep(1000)
