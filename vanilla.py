@@ -1,3 +1,5 @@
+# Organ pipe arrangement of imports; because Guido likes it
+
 import collections
 import traceback
 import functools
