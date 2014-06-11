@@ -961,7 +961,7 @@ class HTTPCore(object):
         return headers
 
 
-class Websocket(object):
+class WebSocket(object):
     MASK = FIN = 0b10000000
     RSV = 0b01110000
     OP = 0b00001111
@@ -975,8 +975,9 @@ class Websocket(object):
 
     SANITY = 1024**3  # limit fragments to 1GB
 
-    def __init__(self, stream):
+    def __init__(self, stream, is_client=True):
         self.stream = stream
+        self.is_client = is_client
 
     @staticmethod
     def mask(mask, s):
@@ -984,38 +985,52 @@ class Websocket(object):
         return ''.join(
             chr(mask_bytes[i % 4] ^ ord(c)) for i, c in enumerate(s))
 
+    @staticmethod
+    def accept_key(key):
+        value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        return base64.b64encode(hashlib.sha1(value).digest())
+
     def send(self, data):
-        mask = os.urandom(4)
         length = len(data)
+
+        MASK = WebSocket.MASK if self.is_client else 0
 
         if length <= 125:
             header = struct.pack(
                 '!BB',
-                Websocket.OP_TEXT | Websocket.FIN,
-                length | Websocket.MASK)
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                length | MASK)
 
         elif length <= 65535:
             header = struct.pack(
                 '!BBH',
-                Websocket.OP_TEXT | Websocket.FIN,
-                126 | Websocket.MASK,
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                126 | MASK,
                 length)
         else:
-            assert length < Websocket.SANITY, \
+            assert length < WebSocket.SANITY, \
                 "Frames limited to 1Gb for sanity"
             header = struct.pack(
                 '!BBQ',
-                Websocket.OP_TEXT | Websocket.FIN,
-                127 | Websocket.MASK,
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                127 | MASK,
                 length)
 
-        message = header + mask + self.mask(mask, data)
-        self.stream.conn.sendall(message)
+        if self.is_client:
+            mask = os.urandom(4)
+            self.stream.conn.sendall(header + mask + self.mask(mask, data))
+        else:
+            self.stream.conn.sendall(header + data)
 
     def recv(self):
         b1, length, = struct.unpack('!BB', self.stream.recv_bytes(2))
-        assert b1 & Websocket.FIN, "Fragmented messages not supported yet"
-        assert not length & Websocket.MASK
+        assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
+
+        if self.is_client:
+            assert not length & WebSocket.MASK
+        else:
+            assert length & WebSocket.MASK
+            length = length & WebSocket.PAYLOAD
 
         if length == 126:
             length, = struct.unpack('!H', self.stream.recv_bytes(2))
@@ -1023,8 +1038,13 @@ class Websocket(object):
         elif length == 127:
             length, = struct.unpack('!Q', self.stream.recv_bytes(8))
 
-        assert length < Websocket.SANITY, "Frames limited to 1Gb for sanity"
-        return self.stream.recv_bytes(length)
+        assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
+
+        if self.is_client:
+            return self.stream.recv_bytes(length)
+
+        mask = self.stream.recv_bytes(4)
+        return self.mask(mask, self.stream.recv_bytes(length))
 
 
 class HTTPClient(object):
@@ -1137,13 +1157,10 @@ class HTTPClient(object):
         assert status.code == 101
 
         headers = response.recv()
-        assert headers['upgrade'].lower() == 'websocket'
+        assert headers['Upgrade'].lower() == 'websocket'
+        assert headers['Sec-WebSocket-Accept'] == WebSocket.accept_key(key)
 
-        value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-        accept = base64.b64encode(hashlib.sha1(value).digest())
-        assert headers['sec-webSocket-accept'] == accept
-
-        return Websocket(self.http.stream)
+        return WebSocket(self.http.stream)
 
 
 class HTTPListener(object):
@@ -1182,56 +1199,88 @@ class HTTPListener(object):
             'Request', ['method', 'path', 'version', 'headers'])
 
         class Response(object):
-            def __init__(self, out):
-                self.status = 200
-                self.headers = {}
+            def __init__(self, request, out):
+                self.request = request
                 self.out = out
+
+                self.status = (200, 'OK')
+                self.headers = {}
+                self.headers_sent = False
+                self.is_upgraded = False
 
             def send(self, data):
                 self.out.send(data)
 
             def end(self, data):
-                self.data = data or ''
+                if not self.is_upgraded:
+                    self.data = data or ''
+                    self.out.close()
+
+            def upgrade(self):
+                assert self.request.headers['Connection'].lower() == 'upgrade'
+                assert self.request.headers['Upgrade'].lower() == 'websocket'
+
+                key = self.request.headers['Sec-WebSocket-Key']
+                accept = WebSocket.accept_key(key)
+
+                self.status = (101, 'Switching Protocols')
+                self.headers.update({
+                    "Upgrade": "websocket",
+                    "Connection": "Upgrade",
+                    "Sec-WebSocket-Accept": accept, })
+                self._send_headers()
+
+                self.is_upgraded = True
                 self.out.close()
+
+                return WebSocket(http.stream, is_client=False)
+
+            def _send_headers(self):
+                assert not self.headers_sent
+                status = 'HTTP/1.1 %s %s\r\n' % (self.status)
+                headers = '\r\n'.join(
+                    '%s: %s' % (k, v) for k, v in self.headers.iteritems())
+                conn.sendall(status+headers+'\r\n'+'\r\n')
+                self.headers_sent = True
+
+            def _send_chunk(self, chunk):
+                if not self.headers_sent:
+                    self.headers['Transfer-Encoding'] = 'chunked'
+                    self._send_headers()
+                conn.sendall('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+
+            def _send_body(self, body):
+                self.headers['Content-Length'] = len(body)
+                self._send_headers()
+                conn.sendall(body)
 
         method, path, version = http.recv_line().split(' ', 2)
         headers = http.recv_headers()
         request = Request(method, path, version, headers)
 
-        out = self.hub.channel()
-        response = Response(out)
-
-        def send_headers(status, headers):
-            # TODO: support setting status/ headers
-            status = 'HTTP/1.1 200 OK\r\n'
-            headers = '\r\n'.join(
-                '%s: %s' % (k, v) for k, v in headers.iteritems())
-            conn.sendall(status+headers+'\r\n'+'\r\n')
+        response = Response(request, self.hub.channel())
 
         @self.hub.spawn
         def _():
             data = self.server(request, response)
             response.end(data)
 
-        headers_sent = False
+        for chunk in response.out:
+            response._send_chunk(chunk)
 
-        for item in out:
-            if not headers_sent:
-                headers_sent = True
-                response.headers['Transfer-Encoding'] = 'chunked'
-                send_headers(response.status, response.headers)
-            conn.sendall('%s\r\n%s\r\n' % (hex(len(item))[2:], item))
+        if response.is_upgraded:
+            # connection was upgraded, bail, as this is no longer a HTTP
+            # connection
+            return
 
-        if not headers_sent:
-            response.headers['Content-Length'] = len(response.data)
-            send_headers(response.status, response.headers)
-            conn.sendall(response.data)
-        else:
+        if response.headers_sent:
+            # this must be a chunked transfer
             if response.data:
-                conn.sendall(
-                    '%s\r\n%s\r\n' % (
-                        hex(len(response.data))[2:], response.data))
-            conn.sendall('0\r\n\r\n')
+                response._send_chunk(response.data)
+            response._send_chunk('')
+
+        else:
+            response._send_body(response.data)
 
         conn.close()
 

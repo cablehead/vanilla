@@ -52,14 +52,14 @@ def test_HTTPClient():
     assert json.loads(body)['args'] == {'foo': 'bar2'}
 
 
-def test_WebsocketClient():
-    from vanilla import Websocket
+def test_WebSocketClient():
+    from vanilla import WebSocket
 
     h = vanilla.Hub()
 
     mask = os.urandom(4)
     message = 'Hi Toby'
-    assert Websocket.mask(mask, Websocket.mask(mask, message)) == message
+    assert WebSocket.mask(mask, WebSocket.mask(mask, message)) == message
 
     conn = h.http.connect('ws://echo.websocket.org')
     ws = conn.websocket('/')
