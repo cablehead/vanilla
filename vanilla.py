@@ -79,44 +79,88 @@ def init_C():
     ffi = cffi.FFI()
 
     ffi.cdef("""
-        ssize_t read(int fd, void *buf, size_t count);
+    ssize_t read(int fd, void *buf, size_t count);
 
-        int eventfd(unsigned int initval, int flags);
+    int eventfd(unsigned int initval, int flags);
 
-        #define SIG_BLOCK ...
-        #define SIG_UNBLOCK ...
-        #define SIG_SETMASK ...
+    #define SIG_BLOCK ...
+    #define SIG_UNBLOCK ...
+    #define SIG_SETMASK ...
 
-        typedef struct { ...; } sigset_t;
+    typedef struct { ...; } sigset_t;
 
-        int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+    int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 
-        int sigemptyset(sigset_t *set);
-        int sigfillset(sigset_t *set);
-        int sigaddset(sigset_t *set, int signum);
-        int sigdelset(sigset_t *set, int signum);
-        int sigismember(const sigset_t *set, int signum);
+    int sigemptyset(sigset_t *set);
+    int sigfillset(sigset_t *set);
+    int sigaddset(sigset_t *set, int signum);
+    int sigdelset(sigset_t *set, int signum);
+    int sigismember(const sigset_t *set, int signum);
 
-        #define SFD_NONBLOCK ...
-        #define SFD_CLOEXEC ...
+    #define SFD_NONBLOCK ...
+    #define SFD_CLOEXEC ...
 
-        #define EAGAIN ...
+    #define EAGAIN ...
 
-        #define EPOLLIN ...
-        #define EPOLLERR ...
-        #define EPOLLHUP ...
-        #define EPOLLRDHUP ...
+    #define EPOLLIN ...
+    #define EPOLLERR ...
+    #define EPOLLHUP ...
+    #define EPOLLRDHUP ...
 
-        #define SIGALRM ...
-        #define SIGINT ...
-        #define SIGTERM ...
+    #define SIGALRM ...
+    #define SIGINT ...
+    #define SIGTERM ...
 
-        struct signalfd_siginfo {
-            uint32_t ssi_signo;   /* Signal number */
-            ...;
-        };
+    struct signalfd_siginfo {
+        uint32_t ssi_signo;   /* Signal number */
+        ...;
+    };
 
-        int signalfd(int fd, const sigset_t *mask, int flags);
+    int signalfd(int fd, const sigset_t *mask, int flags);
+
+    /*
+        INOTIFY */
+
+    #define IN_ACCESS ...         /* File was accessed. */
+    #define IN_MODIFY ...         /* File was modified. */
+    #define IN_ATTRIB ...         /* Metadata changed. */
+    #define IN_CLOSE_WRITE ...    /* Writtable file was closed. */
+    #define IN_CLOSE_NOWRITE ...  /* Unwrittable file closed. */
+    #define IN_OPEN ...           /* File was opened. */
+    #define IN_MOVED_FROM ...     /* File was moved from X. */
+    #define IN_MOVED_TO ...       /* File was moved to Y. */
+    #define IN_CREATE ...         /* Subfile was created. */
+    #define IN_DELETE ...         /* Subfile was deleted. */
+    #define IN_DELETE_SELF ...    /* Self was deleted. */
+    #define IN_MOVE_SELF ...      /* Self was moved. */
+
+    /* Events sent by the kernel. */
+    #define IN_UNMOUNT ...    /* Backing fs was unmounted. */
+    #define IN_Q_OVERFLOW ... /* Event queued overflowed. */
+    #define IN_IGNORED ...    /* File was ignored. */
+
+    /* Helper events. */
+    #define IN_CLOSE ... /* Close. */
+    #define IN_MOVE ...  /* Moves. */
+
+    /* Special flags. */
+    #define IN_ONLYDIR ...      /* Only watch the path if it is a directory. */
+    #define IN_DONT_FOLLOW ...  /* Do not follow a sym link. */
+    #define IN_EXCL_UNLINK ...  /* Exclude events on unlinked objects. */
+    #define IN_MASK_ADD ...     /* Add to the mask of an already existing
+                                   watch. */
+    #define IN_ISDIR ...        /* Event occurred against dir. */
+    #define IN_ONESHOT ...      /* Only send event once. */
+
+    /* All events which a program can wait on. */
+    #define IN_ALL_EVENTS ...
+
+    #define IN_NONBLOCK ...
+    #define IN_CLOEXEC ...
+
+    int inotify_init(void);
+    int inotify_init1(int flags);
+    int inotify_add_watch(int fd, const char *pathname, uint32_t mask);
     """)
 
     C = ffi.verify("""
@@ -125,6 +169,7 @@ def init_C():
         #include <sys/signalfd.h>
         #include <sys/epoll.h>
         #include <signal.h>
+        #include <sys/inotify.h>
     """)
 
     # stash some conveniences on C
@@ -341,6 +386,142 @@ class Signal(object):
                 del self.mapper[num]
         del self.reverse_mapper[ch]
         self.reset()
+
+
+class FD(object):
+    def __init__(self, hub, fileno):
+        self.hub = hub
+        self.fileno = fileno
+
+        self.events = hub.register(fileno, C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
+
+        self.hub.spawn(self.loop)
+        self.pending = self.hub.channel()
+
+    def loop(self):
+        while True:
+            try:
+                fileno, event = self.events.recv()
+                if event & select.EPOLLERR or event & select.EPOLLHUP:
+                    raise Stop
+
+                # read until exhaustion
+                while True:
+                    try:
+                        data = os.read(self.fileno, 16384)
+                    except OSError, e:
+                        # resource unavailable, block until it is
+                        if e.errno == 11:  # EAGAIN
+                            break
+                        raise Stop
+
+                    if not data:
+                        raise Stop
+
+                    self.pending.send(data)
+
+            except Stop:
+                self.close()
+                return
+
+    def close(self):
+        self.hub.unregister(self.fileno)
+        """
+        try:
+            # TODO: this needs to be customizable
+            self.conn.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        """
+        os.close(self.fileno)
+
+    def recv_bytes(self, n):
+        if n == 0:
+            return ''
+
+        received = 0
+        segments = []
+        while received < n:
+            segment = self.pending.recv()
+            segments.append(segment)
+            received += len(segment)
+
+        # if we've received too much, break the last segment and return the
+        # additional portion to pending
+        overage = received - n
+        if overage:
+            self.pending.items.appendleft(segments[-1][-1*(overage):])
+            segments[-1] = segments[-1][:-1*(overage)]
+
+        return ''.join(segments)
+
+    def recv_partition(self, sep):
+        received = ''
+        while True:
+            received += self.pending.recv()
+            keep, matched, additonal = received.partition(sep)
+            if matched:
+                if additonal:
+                    self.pending.items.appendleft(additonal)
+                return keep
+
+
+class INotify(object):
+    FLAG_TO_HUMAN = [
+        (C.IN_ACCESS, 'access'),
+        (C.IN_MODIFY, 'modify'),
+        (C.IN_ATTRIB, 'attrib'),
+        (C.IN_CLOSE_WRITE, 'close_write'),
+        (C.IN_CLOSE_NOWRITE, 'close_nowrite'),
+        (C.IN_OPEN, 'open'),
+        (C.IN_MOVED_FROM, 'moved_from'),
+        (C.IN_MOVED_TO, 'moved_to'),
+        (C.IN_CREATE, 'create'),
+        (C.IN_DELETE, 'delete'),
+        (C.IN_DELETE_SELF, 'delete_self'),
+        (C.IN_MOVE_SELF, 'move_self'),
+        (C.IN_UNMOUNT, 'unmount'),
+        (C.IN_Q_OVERFLOW, 'queue_overflow'),
+        (C.IN_IGNORED, 'ignored'),
+        (C.IN_ONLYDIR, 'only_dir'),
+        (C.IN_DONT_FOLLOW, 'dont_follow'),
+        (C.IN_MASK_ADD, 'mask_add'),
+        (C.IN_ISDIR, 'is_dir'),
+        (C.IN_ONESHOT, 'one_shot'), ]
+
+    @staticmethod
+    def humanize_mask(mask):
+        s = []
+        for k, v in INotify.FLAG_TO_HUMAN:
+            if k & mask:
+                s.append(v)
+        return s
+
+    def __init__(self, hub):
+        self.hub = hub
+
+        # TODO: refactor Stream, FD and all the other misc fd access in a sec
+        self.fileno = C.inotify_init1(C.IN_NONBLOCK | C.IN_CLOEXEC)
+        self.fd = FD(self.hub, self.fileno)
+
+        self.wds = {}
+
+        @hub.spawn
+        def _():
+            while True:
+                notification = self.fd.recv_bytes(16)
+                wd, mask, cookie, size = struct.unpack("=LLLL", notification)
+                if size:
+                    name = self.fd.recv_bytes(size).rstrip('\0')
+                else:
+                    name = None
+                self.wds[wd].send((mask, name))
+
+    def watch(self, path, mask=C.IN_ALL_EVENTS):
+        wd = C.inotify_add_watch(self.fileno, path, mask)
+        ch = self.hub.channel()
+        self.wds[wd] = ch
+        return ch
 
 
 class Hub(object):

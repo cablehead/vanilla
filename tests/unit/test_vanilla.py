@@ -168,6 +168,57 @@ def test_Signal():
     assert not h.registered
 
 
+def test_INotify(tmpdir):
+    h = vanilla.Hub()
+    inot = h.inotify()
+    ch1 = inot.watch(tmpdir.strpath)
+
+    fh = tmpdir.join('f1').open('w')
+    mask, name = ch1.recv()
+    assert name == 'f1'
+    assert inot.humanize_mask(mask) == ['create']
+    mask, name = ch1.recv()
+    assert name == 'f1'
+    assert inot.humanize_mask(mask) == ['open']
+
+    tmpdir.mkdir('d')
+    mask, name = ch1.recv()
+    assert name == 'd'
+    assert inot.humanize_mask(mask) == ['create', 'is_dir']
+
+    ch2 = inot.watch(tmpdir.join('d').strpath)
+
+    tmpdir.join('d', 'f2').open('w').write('data')
+
+    ch, (mask, name) = h.select(ch1, ch2)
+    assert ch == ch2
+    assert name == 'f2'
+    assert inot.humanize_mask(mask) == ['create']
+
+    ch, (mask, name) = h.select(ch1, ch2)
+    assert ch == ch2
+    assert name == 'f2'
+    assert inot.humanize_mask(mask) == ['open']
+
+    fh.write('data')
+    fh.close()
+
+    ch, (mask, name) = h.select(ch1, ch2)
+    assert ch == ch2
+    assert name == 'f2'
+    assert inot.humanize_mask(mask) == ['modify']
+
+    ch, (mask, name) = h.select(ch1, ch2)
+    assert ch == ch2
+    assert name == 'f2'
+    assert inot.humanize_mask(mask) == ['close_write']
+
+    ch, (mask, name) = h.select(ch1, ch2)
+    assert ch == ch1
+    assert name == 'f1'
+    assert inot.humanize_mask(mask) == ['modify']
+
+
 def test_stop():
     """
     test that all components cleanly shutdown when the hub is requested to stop
