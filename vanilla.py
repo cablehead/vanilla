@@ -364,6 +364,34 @@ class Hub(object):
     def channel(self):
         return Channel(self)
 
+    # allows you to wait on a list of channels
+    def select(self, *channels):
+        for ch in channels:
+            try:
+                item = ch.recv(timeout=0)
+                return ch, item
+            except Timeout:
+                continue
+
+        for ch in channels:
+            ch.waiters.append(getcurrent())
+
+        try:
+            fired, item = self.pause()
+        except:
+            for ch in channels:
+                if getcurrent() in ch.waiters:
+                    ch.waiters.remove(getcurrent())
+            raise
+
+        for ch in channels:
+            if ch != fired:
+                ch.waiters.remove(getcurrent())
+        return fired, item
+
+    def inotify(self):
+        return INotify(self)
+
     def pause(self, timeout=-1):
         if timeout > -1:
             item = self.scheduled.add(

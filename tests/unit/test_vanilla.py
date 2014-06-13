@@ -108,6 +108,43 @@ def test_Channel():
     assert list(c) == [0, 4, 8, 12, 16]
 
 
+def test_select():
+    h = vanilla.Hub()
+    c1 = h.channel()
+    c2 = h.channel()
+    check = h.channel()
+
+    def background():
+        while True:
+            try:
+                ch, item = h.select(c1, c2)
+                if ch == c1:
+                    check.send("c1 " + item)
+                    continue
+                if ch == c2:
+                    check.send("c2 " + item)
+                    continue
+            except Exception, e:
+                c1.close()
+                c2.close()
+                check.send(e)
+                break
+    h.spawn(background)
+
+    c1.send("1")
+    h.sleep()
+    c2.send("2")
+    c1.send("3")
+
+    assert "c1 1" == check.recv()
+    assert "c2 2" == check.recv()
+    assert "c1 3" == check.recv()
+
+    # test select cleans up after an exception
+    c1.send(Exception('x'))
+    pytest.raises(Exception, check.recv)
+
+
 def test_Signal():
     h = vanilla.Hub()
 
