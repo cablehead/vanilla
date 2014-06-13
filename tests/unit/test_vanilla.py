@@ -297,7 +297,7 @@ def test_TCP():
     assert echo.closed == 1
 
 
-def test_Stream():
+def test_FD():
     h = vanilla.Hub()
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -312,7 +312,7 @@ def test_Stream():
 
     conn, host = s.accept()
     conn.setblocking(0)
-    stream = vanilla.Stream(h, conn)
+    fd = vanilla.FD(h, conn.fileno())
 
     def chunks(l, n):
         """
@@ -327,12 +327,12 @@ def test_Stream():
             h.sleep(10)
             client.sendall(chunk)
 
-    assert stream.recv_bytes(5) == '12121'
-    assert stream.recv_bytes(5) == '21212'
-    assert stream.recv_bytes(5) == '12121'
-    assert stream.recv_partition('\r\n') == '2foo'
-    assert stream.recv_partition('\r\n') == 'bar'
-    assert stream.recv_partition('\r\n') == ''
+    assert fd.recv_bytes(5) == '12121'
+    assert fd.recv_bytes(5) == '21212'
+    assert fd.recv_bytes(5) == '12121'
+    assert fd.recv_partition('\r\n') == '2foo'
+    assert fd.recv_partition('\r\n') == 'bar'
+    assert fd.recv_partition('\r\n') == ''
 
     # h.stop_on_term()
 

@@ -195,6 +195,87 @@ def init_C():
 C = init_C()
 
 
+class FD(object):
+    def __init__(self, hub, fileno):
+        self.hub = hub
+        self.fileno = fileno
+
+        self.events = hub.register(fileno, C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
+
+        self.hub.spawn(self.loop)
+        self.pending = self.hub.channel()
+
+    def loop(self):
+        while True:
+            try:
+                fileno, event = self.events.recv()
+                if event & select.EPOLLERR or event & select.EPOLLHUP:
+                    raise Stop
+
+                # read until exhaustion
+                while True:
+                    try:
+                        data = os.read(self.fileno, 4096)
+                    except OSError, e:
+                        # resource unavailable, block until it is
+                        if e.errno == 11:  # EAGAIN
+                            break
+                        raise Stop
+
+                    if not data:
+                        raise Stop
+
+                    self.pending.send(data)
+
+            except Stop:
+                self.close()
+                return
+
+    def close(self):
+        self.hub.unregister(self.fileno)
+        try:
+            os.close(self.fileno)
+        except:
+            pass
+
+    def recv_bytes(self, n):
+        if n == 0:
+            return ''
+
+        received = 0
+        segments = []
+        while received < n:
+            segment = self.pending.recv()
+            segments.append(segment)
+            received += len(segment)
+
+        # if we've received too much, break the last segment and return the
+        # additional portion to pending
+        overage = received - n
+        if overage:
+            self.pending.items.appendleft(segments[-1][-1*(overage):])
+            segments[-1] = segments[-1][:-1*(overage)]
+
+        return ''.join(segments)
+
+    def recv_partition(self, sep):
+        received = ''
+        while True:
+            received += self.pending.recv()
+            keep, matched, additonal = received.partition(sep)
+            if matched:
+                if additonal:
+                    self.pending.items.appendleft(additonal)
+                return keep
+
+    def send(self, data):
+        while True:
+            n = os.write(self.fileno, data)
+            if n == len(data):
+                break
+            data = data[n:]
+
+
 class Event(object):
     """
     An event object manages an internal flag that can be set to true with the
@@ -388,84 +469,6 @@ class Signal(object):
         self.reset()
 
 
-class FD(object):
-    def __init__(self, hub, fileno):
-        self.hub = hub
-        self.fileno = fileno
-
-        self.events = hub.register(fileno, C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
-
-        self.hub.spawn(self.loop)
-        self.pending = self.hub.channel()
-
-    def loop(self):
-        while True:
-            try:
-                fileno, event = self.events.recv()
-                if event & select.EPOLLERR or event & select.EPOLLHUP:
-                    raise Stop
-
-                # read until exhaustion
-                while True:
-                    try:
-                        data = os.read(self.fileno, 16384)
-                    except OSError, e:
-                        # resource unavailable, block until it is
-                        if e.errno == 11:  # EAGAIN
-                            break
-                        raise Stop
-
-                    if not data:
-                        raise Stop
-
-                    self.pending.send(data)
-
-            except Stop:
-                self.close()
-                return
-
-    def close(self):
-        self.hub.unregister(self.fileno)
-        """
-        try:
-            # TODO: this needs to be customizable
-            self.conn.shutdown(socket.SHUT_RDWR)
-        except:
-            pass
-        """
-        os.close(self.fileno)
-
-    def recv_bytes(self, n):
-        if n == 0:
-            return ''
-
-        received = 0
-        segments = []
-        while received < n:
-            segment = self.pending.recv()
-            segments.append(segment)
-            received += len(segment)
-
-        # if we've received too much, break the last segment and return the
-        # additional portion to pending
-        overage = received - n
-        if overage:
-            self.pending.items.appendleft(segments[-1][-1*(overage):])
-            segments[-1] = segments[-1][:-1*(overage)]
-
-        return ''.join(segments)
-
-    def recv_partition(self, sep):
-        received = ''
-        while True:
-            received += self.pending.recv()
-            keep, matched, additonal = received.partition(sep)
-            if matched:
-                if additonal:
-                    self.pending.items.appendleft(additonal)
-                return keep
-
-
 class INotify(object):
     FLAG_TO_HUMAN = [
         (C.IN_ACCESS, 'access'),
@@ -499,11 +502,8 @@ class INotify(object):
 
     def __init__(self, hub):
         self.hub = hub
-
-        # TODO: refactor Stream, FD and all the other misc fd access in a sec
         self.fileno = C.inotify_init1(C.IN_NONBLOCK | C.IN_CLOEXEC)
         self.fd = FD(self.hub, self.fileno)
-
         self.wds = {}
 
         @hub.spawn
@@ -1073,93 +1073,29 @@ class HTTP(object):
         return HTTPClient(self.hub, url)
 
 
-class Stream(object):
-    def __init__(self, hub, conn):
-        self.hub = hub
-        self.conn = conn
-        self.fileno = conn.fileno()
+class HTTPSocket(object):
 
-        self.events = hub.register(
-            conn.fileno(),
-            C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
+    Status = collections.namedtuple('Status', ['version', 'code', 'message'])
 
-        self.hub.spawn(self.loop)
-        self.pending = self.hub.channel()
+    Request = collections.namedtuple(
+        'Request', ['method', 'path', 'version', 'headers'])
 
-    def loop(self):
-        while True:
-            try:
-                fd, event = self.events.recv()
-                if event & select.EPOLLERR or event & select.EPOLLHUP:
-                    raise Stop
+    def __init__(self, fd):
+        self.fd = fd
 
-                # read conn until exhaustion
-                while True:
-                    try:
-                        data = self.conn.recv(16384)
-                    except socket.error, e:
-                        # resource unavailable, block until it is
-                        if e.errno == 11:  # EAGAIN
-                            break
-                        raise Stop
-
-                    if not data:
-                        raise Stop
-
-                    self.pending.send(data)
-
-            except Stop:
-                self.close()
-                return
-
-    def close(self):
-        self.hub.unregister(self.fileno)
-        try:
-            self.conn.shutdown(socket.SHUT_RDWR)
-        except:
-            pass
-        self.conn.close()
+    def send(self, data):
+        self.fd.send(data)
 
     def recv_bytes(self, n):
-        if n == 0:
-            return ''
-
-        received = 0
-        segments = []
-        while received < n:
-            segment = self.pending.recv()
-            segments.append(segment)
-            received += len(segment)
-
-        # if we've received too much, break the last segment and return the
-        # additional portion to pending
-        overage = received - n
-        if overage:
-            self.pending.items.appendleft(segments[-1][-1*(overage):])
-            segments[-1] = segments[-1][:-1*(overage)]
-
-        return ''.join(segments)
-
-    def recv_partition(self, sep):
-        received = ''
-        while True:
-            received += self.pending.recv()
-            keep, matched, additonal = received.partition(sep)
-            if matched:
-                if additonal:
-                    self.pending.items.appendleft(additonal)
-                return keep
-
-
-class HTTPCore(object):
-    def __init__(self, stream):
-        self.stream = stream
-
-    def recv_bytes(self, n):
-        return self.stream.recv_bytes(n)
+        return self.fd.recv_bytes(n)
 
     def recv_line(self):
-        return self.stream.recv_partition('\r\n')
+        return self.fd.recv_partition('\r\n')
+
+    def send_headers(self, headers):
+        headers = '\r\n'.join(
+            '%s: %s' % (k, v) for k, v in headers.iteritems())
+        self.send(headers+'\r\n'+'\r\n')
 
     def recv_headers(self):
         headers = Insensitive()
@@ -1170,6 +1106,32 @@ class HTTPCore(object):
             k, v = line.split(': ', 1)
             headers[k] = v
         return headers
+
+    def recv_request(self):
+        method, path, version = self.recv_line().split(' ', 2)
+        headers = self.recv_headers()
+        return self.Request(method, path, version, headers)
+
+    def recv_response(self):
+        version, code, message = self.recv_line().split(' ', 2)
+        code = int(code)
+        status = self.Status(version, code, message)
+        return status
+
+    def send_response(self, code, message):
+        self.send('HTTP/1.1 %s %s\r\n' % (code, message))
+
+    def send_chunk(self, chunk):
+        self.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+
+    def recv_chunk(self):
+        length = int(self.recv_line(), 16)
+        if length:
+            chunk = self.recv_bytes(length)
+        else:
+            chunk = ''
+        assert self.recv_bytes(2) == '\r\n'
+        return chunk
 
 
 class WebSocket(object):
@@ -1186,8 +1148,8 @@ class WebSocket(object):
 
     SANITY = 1024**3  # limit fragments to 1GB
 
-    def __init__(self, stream, is_client=True):
-        self.stream = stream
+    def __init__(self, fd, is_client=True):
+        self.fd = fd
         self.is_client = is_client
 
     @staticmethod
@@ -1229,12 +1191,12 @@ class WebSocket(object):
 
         if self.is_client:
             mask = os.urandom(4)
-            self.stream.conn.sendall(header + mask + self.mask(mask, data))
+            self.fd.send(header + mask + self.mask(mask, data))
         else:
-            self.stream.conn.sendall(header + data)
+            self.fd.send(header + data)
 
     def recv(self):
-        b1, length, = struct.unpack('!BB', self.stream.recv_bytes(2))
+        b1, length, = struct.unpack('!BB', self.fd.recv_bytes(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 
         if self.is_client:
@@ -1244,23 +1206,21 @@ class WebSocket(object):
             length = length & WebSocket.PAYLOAD
 
         if length == 126:
-            length, = struct.unpack('!H', self.stream.recv_bytes(2))
+            length, = struct.unpack('!H', self.fd.recv_bytes(2))
 
         elif length == 127:
-            length, = struct.unpack('!Q', self.stream.recv_bytes(8))
+            length, = struct.unpack('!Q', self.fd.recv_bytes(8))
 
         assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
 
         if self.is_client:
-            return self.stream.recv_bytes(length)
+            return self.fd.recv_bytes(length)
 
-        mask = self.stream.recv_bytes(4)
-        return self.mask(mask, self.stream.recv_bytes(length))
+        mask = self.fd.recv_bytes(4)
+        return self.mask(mask, self.fd.recv_bytes(length))
 
 
 class HTTPClient(object):
-    Status = collections.namedtuple('Status', ['version', 'code', 'message'])
-
     def __init__(self, hub, url):
         self.hub = hub
 
@@ -1273,7 +1233,7 @@ class HTTPClient(object):
         self.conn.connect((host, port))
         self.conn.setblocking(0)
 
-        self.http = HTTPCore(Stream(hub, self.conn))
+        self.http = HTTPSocket(FD(hub, self.conn.fileno()))
 
         self.agent = 'vanilla/%s' % __version__
 
@@ -1288,10 +1248,7 @@ class HTTPClient(object):
 
     def receiver(self):
         while True:
-            version, code, message = self.http.recv_line().split(' ', 2)
-            code = int(code)
-            status = self.Status(version, code, message)
-
+            status = self.http.recv_response()
             ch = self.responses.popleft()
             ch.send(status)
 
@@ -1306,13 +1263,10 @@ class HTTPClient(object):
 
             if headers.get('transfer-encoding') == 'chunked':
                 while True:
-                    length = int(self.http.recv_line())
-                    if length:
-                        chunk = self.http.recv_bytes(length)
-                        ch.send(chunk)
-                    assert self.http.recv_bytes(2) == '\r\n'
-                    if not length:
+                    chunk = self.http.recv_chunk()
+                    if not chunk:
                         break
+                    ch.send(chunk)
             else:
                 # TODO:
                 # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
@@ -1341,7 +1295,7 @@ class HTTPClient(object):
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in request_headers.iteritems())
 
-        self.conn.sendall(request+headers+'\r\n'+'\r\n')
+        self.http.send(request+headers+'\r\n'+'\r\n')
 
         ch = self.hub.channel()
         self.responses.append(ch)
@@ -1371,10 +1325,75 @@ class HTTPClient(object):
         assert headers['Upgrade'].lower() == 'websocket'
         assert headers['Sec-WebSocket-Accept'] == WebSocket.accept_key(key)
 
-        return WebSocket(self.http.stream)
+        ws = WebSocket(self.http.fd)
+        # TODO: the connection gets garbage collector unless we keep a
+        # reference to it
+        ws.conn = self.conn
+        return ws
 
 
 class HTTPListener(object):
+
+    class Response(object):
+        """
+        manages the state of a HTTP Response
+        """
+        def __init__(self, request, http, chunks):
+            self.request = request
+            self.http = http
+            self.chunks = chunks
+
+            self.status = (200, 'OK')
+            self.headers = {}
+
+            self.is_init = False
+            self.is_upgraded = False
+
+        def send(self, data):
+            self.chunks.send(data)
+
+        def upgrade(self):
+            assert self.request.headers['Connection'].lower() == 'upgrade'
+            assert self.request.headers['Upgrade'].lower() == 'websocket'
+
+            key = self.request.headers['Sec-WebSocket-Key']
+            accept = WebSocket.accept_key(key)
+
+            self.status = (101, 'Switching Protocols')
+            self.headers.update({
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Accept": accept, })
+
+            self.init()
+            self.is_upgraded = True
+            self.chunks.close()
+
+            return WebSocket(self.http.fd, is_client=False)
+
+        def init(self):
+            assert not self.is_init
+            self.is_init = True
+            self.http.send_response(*self.status)
+            self.http.send_headers(self.headers)
+
+        def end(self, data):
+            if not self.is_upgraded:
+                self.data = data or ''
+                self.chunks.close()
+
+        def send_chunk(self, chunk):
+            if not self.is_init:
+                self.headers['Transfer-Encoding'] = 'chunked'
+                self.init()
+            self.http.send_chunk(chunk)
+
+        def send_body(self, body):
+            if not self.is_init:
+                self.headers['Content-Length'] = len(body)
+                self.init()
+            self.http.send(body)
+
     def __init__(self, hub, host, port, server):
         self.hub = hub
 
@@ -1402,98 +1421,36 @@ class HTTPListener(object):
 
     def serve(self, conn):
         conn.setblocking(0)
-        http = HTTPCore(Stream(self.hub, conn))
+        http = HTTPSocket(FD(self.hub, conn.fileno()))
 
         #TODO: support http keep alives
-
-        Request = collections.namedtuple(
-            'Request', ['method', 'path', 'version', 'headers'])
-
-        class Response(object):
-            def __init__(self, request, out):
-                self.request = request
-                self.out = out
-
-                self.status = (200, 'OK')
-                self.headers = {}
-                self.headers_sent = False
-                self.is_upgraded = False
-
-            def send(self, data):
-                self.out.send(data)
-
-            def end(self, data):
-                if not self.is_upgraded:
-                    self.data = data or ''
-                    self.out.close()
-
-            def upgrade(self):
-                assert self.request.headers['Connection'].lower() == 'upgrade'
-                assert self.request.headers['Upgrade'].lower() == 'websocket'
-
-                key = self.request.headers['Sec-WebSocket-Key']
-                accept = WebSocket.accept_key(key)
-
-                self.status = (101, 'Switching Protocols')
-                self.headers.update({
-                    "Upgrade": "websocket",
-                    "Connection": "Upgrade",
-                    "Sec-WebSocket-Accept": accept, })
-                self._send_headers()
-
-                self.is_upgraded = True
-                self.out.close()
-
-                return WebSocket(http.stream, is_client=False)
-
-            def _send_headers(self):
-                assert not self.headers_sent
-                status = 'HTTP/1.1 %s %s\r\n' % (self.status)
-                headers = '\r\n'.join(
-                    '%s: %s' % (k, v) for k, v in self.headers.iteritems())
-                conn.sendall(status+headers+'\r\n'+'\r\n')
-                self.headers_sent = True
-
-            def _send_chunk(self, chunk):
-                if not self.headers_sent:
-                    self.headers['Transfer-Encoding'] = 'chunked'
-                    self._send_headers()
-                conn.sendall('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
-
-            def _send_body(self, body):
-                self.headers['Content-Length'] = len(body)
-                self._send_headers()
-                conn.sendall(body)
-
-        method, path, version = http.recv_line().split(' ', 2)
-        headers = http.recv_headers()
-        request = Request(method, path, version, headers)
-
-        response = Response(request, self.hub.channel())
+        request = http.recv_request()
+        response = self.Response(request, http, self.hub.channel())
 
         @self.hub.spawn
         def _():
             data = self.server(request, response)
             response.end(data)
 
-        for chunk in response.out:
-            response._send_chunk(chunk)
+        for chunk in response.chunks:
+            response.send_chunk(chunk)
 
         if response.is_upgraded:
             # connection was upgraded, bail, as this is no longer a HTTP
             # connection
             return
 
-        if response.headers_sent:
+        if response.is_init:
             # this must be a chunked transfer
             if response.data:
-                response._send_chunk(response.data)
-            response._send_chunk('')
+                http.send_chunk(response.data)
+            http.send_chunk('')
 
         else:
-            response._send_body(response.data)
+            response.send_body(response.data)
 
-        conn.close()
+        # TODO: work through cleanup
+        # http.close()
 
     def stop(self):
         self.hub.unregister(self.sock.fileno())
