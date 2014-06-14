@@ -219,6 +219,19 @@ def test_INotify(tmpdir):
     assert inot.humanize_mask(mask) == ['modify']
 
 
+class TestProcess(object):
+    def test_spawn(self):
+        h = vanilla.Hub()
+
+        def child(code):
+            import sys
+            sys.exit(code)
+
+        p = h.process.spawn(child, 202)
+        p.done.recv()
+        assert p.exitcode == 202
+
+
 def test_stop():
     """
     test that all components cleanly shutdown when the hub is requested to stop

@@ -1,5 +1,6 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
+import multiprocessing
 import collections
 import traceback
 import functools
@@ -110,6 +111,7 @@ def init_C():
     #define SIGALRM ...
     #define SIGINT ...
     #define SIGTERM ...
+    #define SIGCHLD ...
 
     struct signalfd_siginfo {
         uint32_t ssi_signo;   /* Signal number */
@@ -161,6 +163,14 @@ def init_C():
     int inotify_init(void);
     int inotify_init1(int flags);
     int inotify_add_watch(int fd, const char *pathname, uint32_t mask);
+
+    /*
+        PRCTL */
+
+    #define PR_SET_PDEATHSIG ...
+
+    int prctl(int option, unsigned long arg2, unsigned long arg3,
+              unsigned long arg4, unsigned long arg5);
     """)
 
     C = ffi.verify("""
@@ -170,6 +180,7 @@ def init_C():
         #include <sys/epoll.h>
         #include <signal.h>
         #include <sys/inotify.h>
+        #include <sys/prctl.h>
     """)
 
     # stash some conveniences on C
@@ -524,6 +535,52 @@ class INotify(object):
         return ch
 
 
+class Process(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.children = {}
+        self.sigchld = None
+
+    def set_pdeathsig(self):
+        """
+        Ask Linux to ensure out children are sent a SIGTERM when our process
+        dies, to avoid orphaned children.
+        """
+        rc = C.prctl(C.PR_SET_PDEATHSIG, C.SIGTERM, 0, 0, 0)
+        assert not rc, 'PR_SET_PDEATHSIG failed: %s' % rc
+
+    def watch(self):
+        while self.children:
+            try:
+                self.sigchld.recv()
+            except Stop:
+                for p in self.children:
+                    p.terminate()
+                continue
+
+            processes = self.children.keys()
+            for p in processes:
+                if not p.is_alive():
+                    del self.children[p]
+                    p.done.send(p)
+
+        self.hub.signal.unsubscribe(self.sigchld)
+
+    def spawn(self, f, *a, **kw):
+        if not self.sigchld:
+            self.set_pdeathsig()
+            self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
+            self.hub.spawn(self.watch)
+
+        p = multiprocessing.Process(target=f, args=a, kwargs=kw)
+        # TODO: should use an event here
+        ch = self.hub.channel()
+        p.done = ch
+        self.children[p] = ch
+        p.start()
+        return p
+
+
 class Hub(object):
     def __init__(self):
         self.ready = collections.deque()
@@ -534,6 +591,7 @@ class Hub(object):
         self.registered = {}
 
         self.signal = Signal(self)
+        self.process = Process(self)
         self.tcp = TCP(self)
         self.http = HTTP(self)
 
