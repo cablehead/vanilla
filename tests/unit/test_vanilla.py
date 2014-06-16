@@ -230,6 +230,7 @@ class TestProcess(object):
         p = h.process.spawn(child, 202)
         p.done.recv()
         assert p.exitcode == 202
+        assert p.exitsignal == 0
 
 
 def test_stop():

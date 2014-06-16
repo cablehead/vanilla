@@ -1,6 +1,5 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
-import multiprocessing
 import collections
 import traceback
 import functools
@@ -80,6 +79,12 @@ def init_C():
     ffi = cffi.FFI()
 
     ffi.cdef("""
+
+    int pipe2(int pipefd[2], int flags);
+
+    #define O_NONBLOCK ...
+    #define O_CLOEXEC ...
+
     ssize_t read(int fd, void *buf, size_t count);
 
     int eventfd(unsigned int initval, int flags);
@@ -175,11 +180,13 @@ def init_C():
 
     C = ffi.verify("""
         #include <unistd.h>
-        #include <sys/eventfd.h>
-        #include <sys/signalfd.h>
-        #include <sys/epoll.h>
         #include <signal.h>
+        #include <fcntl.h>
+
+        #include <sys/signalfd.h>
+        #include <sys/eventfd.h>
         #include <sys/inotify.h>
+        #include <sys/epoll.h>
         #include <sys/prctl.h>
     """)
 
@@ -536,6 +543,28 @@ class INotify(object):
 
 
 class Process(object):
+
+    class Child(object):
+        def __init__(self, hub, pid):
+            self.hub = hub
+            self.pid = pid
+            # TODO: should use an event here
+            self.done = self.hub.channel()
+
+        def check_liveness(self):
+            pid, code = os.waitpid(self.pid, os.WNOHANG)
+
+            if (pid, code) == (0, 0):
+                return True
+
+            self.exitcode = code >> 8
+            self.exitsignal = code & (2**8-1)
+            self.done.send(self)
+            return False
+
+        def terminate(self):
+            raise Exception('eep')
+
     def __init__(self, hub):
         self.hub = hub
         self.children = {}
@@ -554,31 +583,47 @@ class Process(object):
             try:
                 self.sigchld.recv()
             except Stop:
-                for p in self.children:
-                    p.terminate()
+                for child in self.children:
+                    child.terminate()
                 continue
-
-            processes = self.children.keys()
-            for p in processes:
-                if not p.is_alive():
-                    del self.children[p]
-                    p.done.send(p)
-
+            self.children = [
+                child for child in self.children if child.check_liveness()]
         self.hub.signal.unsubscribe(self.sigchld)
+
+    def bootstrap(self, f, *a, **kw):
+        self.set_pdeathsig()
+
+        try:
+            f(*a, **kw)
+            exitcode = 0
+        except SystemExit, e:
+            if not e.args:
+                exitcode = 1
+            elif type(e.args[0]) is int:
+                exitcode = e.args[0]
+            else:
+                sys.stderr.write(e.args[0] + '\n')
+                sys.stderr.flush()
+                exitcode = 1
+
+        os._exit(exitcode)
 
     def spawn(self, f, *a, **kw):
         if not self.sigchld:
-            self.set_pdeathsig()
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
-        p = multiprocessing.Process(target=f, args=a, kwargs=kw)
-        # TODO: should use an event here
-        ch = self.hub.channel()
-        p.done = ch
-        self.children[p] = ch
-        p.start()
-        return p
+        pid = os.fork()
+
+        if pid == 0:
+            # child process
+            self.bootstrap(f, *a, **kw)
+            return
+
+        # parent continues
+        child = self.Child(self.hub, pid)
+        self.children[child] = child
+        return child
 
 
 class Hub(object):
