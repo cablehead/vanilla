@@ -66,15 +66,6 @@ class preserve_exception(object):
             raise self.typ, self.val, self.tb
 
 
-def ospipe():
-    """creates an os pipe and sets it up for async io"""
-    pipe_r, pipe_w = os.pipe()
-    flags = fcntl.fcntl(pipe_w, fcntl.F_GETFL, 0)
-    flags = flags | os.O_NONBLOCK
-    fcntl.fcntl(pipe_w, fcntl.F_SETFL, flags)
-    return pipe_r, pipe_w
-
-
 def init_C():
     ffi = cffi.FFI()
 
