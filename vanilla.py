@@ -581,38 +581,63 @@ class Process(object):
                 child for child in self.children if child.check_liveness()]
         self.hub.signal.unsubscribe(self.sigchld)
 
-    def bootstrap(self, f, *a, **kw):
+    def bootstrap(self, f, inpipe, *a, **kw):
+        import pickle
+        import json
+
+        # Depending on dill for the moment to be able to quickly push on in
+        # this direction, and to see if it's a good idea
+        import dill
+
         self.set_pdeathsig()
 
-        try:
-            f(*a, **kw)
-            exitcode = 0
-        except SystemExit, e:
-            if not e.args:
-                exitcode = 1
-            elif type(e.args[0]) is int:
-                exitcode = e.args[0]
-            else:
-                sys.stderr.write(e.args[0] + '\n')
-                sys.stderr.flush()
-                exitcode = 1
+        pipe_r, pipe_w = os.pipe()
 
-        os._exit(exitcode)
+        os.write(pipe_w, json.dumps((pickle.dumps(f), a, kw)))
+        os.close(pipe_w)
+
+        bootstrap = '\n'.join(x.strip() for x in ("""
+            import pickle
+            import json
+            import sys
+            import os
+
+            import dill
+
+            code, a, kw = json.loads(os.read(%(pipe_r)s, 4096))
+            os.close(%(pipe_r)s)
+
+            os.dup2(%(inpipe)s, sys.stdin.fileno())
+            os.close(%(inpipe)s)
+
+            f = pickle.loads(code)
+            f(*a, **kw)
+        """ % {'pipe_r': pipe_r, 'inpipe': inpipe}).split('\n') if x)
+
+        argv = [sys.executable, '-c', bootstrap]
+        os.execv(argv[0], argv)
 
     def spawn(self, f, *a, **kw):
         if not self.sigchld:
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
+        fds = C.ffi.new('int[2]')
+        C.pipe2(fds, C.O_NONBLOCK)
+        inpipe_r, inpipe_w = fds
+
         pid = os.fork()
 
         if pid == 0:
-            # child process
-            self.bootstrap(f, *a, **kw)
+            os.close(inpipe_w)
+            self.bootstrap(f, inpipe_r, *a, **kw)
             return
 
         # parent continues
+        os.close(inpipe_r)
+
         child = self.Child(self.hub, pid)
+        child.stdin = inpipe_w
         self.children[child] = child
         return child
 

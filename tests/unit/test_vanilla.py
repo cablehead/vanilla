@@ -225,11 +225,16 @@ class TestProcess(object):
 
         def child(code):
             import sys
-            sys.exit(code)
+            mult = int(sys.stdin.read())
+            sys.exit(code*mult)
 
-        p = h.process.spawn(child, 202)
+        p = h.process.spawn(child, 22)
+
+        import os
+        os.write(p.stdin, '10')
+
         p.done.recv()
-        assert p.exitcode == 202
+        assert p.exitcode == 220
         assert p.exitsignal == 0
 
 
