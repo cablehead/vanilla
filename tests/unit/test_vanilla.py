@@ -225,17 +225,19 @@ class TestProcess(object):
 
         def child(code):
             import sys
-            mult = int(sys.stdin.read())
-            sys.exit(code*mult)
+            message = sys.stdin.read()
+            sys.stdout.write(message)
+            sys.exit(code)
 
-        p = h.process.spawn(child, 22)
+        p = h.process.spawn(child, 220)
 
         import os
-        os.write(p.stdin, '10')
-
+        os.write(p.stdin, 'Hi Toby')
         p.done.recv()
+
         assert p.exitcode == 220
         assert p.exitsignal == 0
+        assert os.read(p.stdout, 4096) == 'Hi Toby'
 
 
 def test_stop():

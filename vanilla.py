@@ -581,7 +581,7 @@ class Process(object):
                 child for child in self.children if child.check_liveness()]
         self.hub.signal.unsubscribe(self.sigchld)
 
-    def bootstrap(self, f, inpipe, *a, **kw):
+    def bootstrap(self, f, inpipe, outpipe, *a, **kw):
         import pickle
         import json
 
@@ -610,9 +610,15 @@ class Process(object):
             os.dup2(%(inpipe)s, sys.stdin.fileno())
             os.close(%(inpipe)s)
 
+            os.dup2(%(outpipe)s, sys.stdout.fileno())
+            os.close(%(outpipe)s)
+
             f = pickle.loads(code)
             f(*a, **kw)
-        """ % {'pipe_r': pipe_r, 'inpipe': inpipe}).split('\n') if x)
+        """ % {
+            'pipe_r': pipe_r,
+            'inpipe': inpipe,
+            'outpipe': outpipe}).split('\n') if x)
 
         argv = [sys.executable, '-c', bootstrap]
         os.execv(argv[0], argv)
@@ -622,22 +628,29 @@ class Process(object):
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
-        fds = C.ffi.new('int[2]')
-        C.pipe2(fds, C.O_NONBLOCK)
-        inpipe_r, inpipe_w = fds
+        infds = C.ffi.new('int[2]')
+        C.pipe2(infds, C.O_NONBLOCK)
+        inpipe_r, inpipe_w = infds
+
+        outfds = C.ffi.new('int[2]')
+        C.pipe2(outfds, C.O_NONBLOCK)
+        outpipe_r, outpipe_w = outfds
 
         pid = os.fork()
 
         if pid == 0:
             os.close(inpipe_w)
-            self.bootstrap(f, inpipe_r, *a, **kw)
+            os.close(outpipe_r)
+            self.bootstrap(f, inpipe_r, outpipe_w, *a, **kw)
             return
 
         # parent continues
         os.close(inpipe_r)
+        os.close(outpipe_w)
 
         child = self.Child(self.hub, pid)
         child.stdin = inpipe_w
+        child.stdout = outpipe_r
         self.children[child] = child
         return child
 
