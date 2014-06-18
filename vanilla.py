@@ -580,17 +580,9 @@ class Process(object):
                 child for child in self.children if child.check_liveness()]
         self.hub.signal.unsubscribe(self.sigchld)
 
-    def bootstrap(self, f, inpipe, outpipe, *a, **kw):
+    def bootstrap(self, f, *a, **kw):
         import marshal
         import cPickle as pickle
-
-        self.set_pdeathsig()
-
-        os.dup2(inpipe, 0)
-        os.close(inpipe)
-
-        os.dup2(outpipe, 1)
-        os.close(outpipe)
 
         pipe_r, pipe_w = os.pipe()
         os.write(pipe_w, pickle.dumps((marshal.dumps(f.func_code), a, kw)))
@@ -613,7 +605,7 @@ class Process(object):
         argv = [sys.executable, '-c', bootstrap]
         os.execv(argv[0], argv)
 
-    def spawn(self, f, *a, **kw):
+    def launch(self, f, *a, **kw):
         if not self.sigchld:
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
@@ -629,9 +621,18 @@ class Process(object):
         pid = os.fork()
 
         if pid == 0:
+            # child process
+            self.set_pdeathsig()
+
             os.close(inpipe_w)
+            os.dup2(inpipe_r, 0)
+            os.close(inpipe_r)
+
             os.close(outpipe_r)
-            self.bootstrap(f, inpipe_r, outpipe_w, *a, **kw)
+            os.dup2(outpipe_w, 1)
+            os.close(outpipe_w)
+
+            f(*a, **kw)
             return
 
         # parent continues
@@ -643,6 +644,9 @@ class Process(object):
         child.stdout = outpipe_r
         self.children[child] = child
         return child
+
+    def spawn(self, f, *a, **kw):
+        return self.launch(self.bootstrap, f, *a, **kw)
 
 
 class Hub(object):
