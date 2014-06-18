@@ -197,6 +197,12 @@ def init_C():
             assert not rc, "signum: %s doesn't specify a valid signal." % num
         return s
 
+    @Cdot
+    def pipe():
+        fds = C.ffi.new('int[2]')
+        C.pipe2(fds, C.O_NONBLOCK)
+        return fds
+
     return C
 
 
@@ -610,13 +616,8 @@ class Process(object):
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
-        infds = C.ffi.new('int[2]')
-        C.pipe2(infds, C.O_NONBLOCK)
-        inpipe_r, inpipe_w = infds
-
-        outfds = C.ffi.new('int[2]')
-        C.pipe2(outfds, C.O_NONBLOCK)
-        outpipe_r, outpipe_w = outfds
+        inpipe_r, inpipe_w = C.pipe()
+        outpipe_r, outpipe_w = C.pipe()
 
         pid = os.fork()
 
