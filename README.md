@@ -16,7 +16,7 @@ and they had a baby, it might look like Vanilla.*
 
 ## Overview
 
-Vanilla is a fast, concurrent, micro server-framework. It's designed to be used
+Vanilla is a fast, concurrent, micro server-library. It's designed to be used
 with PyPy and with CPython 2.6 or 2.7. Vanilla is:
 
 - **lightweight**: distributed as a single file and requires *no* external
