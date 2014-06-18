@@ -586,8 +586,13 @@ class Process(object):
 
         self.set_pdeathsig()
 
-        pipe_r, pipe_w = os.pipe()
+        os.dup2(inpipe, 0)
+        os.close(inpipe)
 
+        os.dup2(outpipe, 1)
+        os.close(outpipe)
+
+        pipe_r, pipe_w = os.pipe()
         os.write(pipe_w, pickle.dumps((marshal.dumps(f.func_code), a, kw)))
         os.close(pipe_w)
 
@@ -601,17 +606,9 @@ class Process(object):
             code, a, kw = pickle.loads(os.read(%(pipe_r)s, 4096))
             os.close(%(pipe_r)s)
 
-            os.dup2(%(inpipe)s, sys.stdin.fileno())
-            os.close(%(inpipe)s)
-
-            os.dup2(%(outpipe)s, sys.stdout.fileno())
-            os.close(%(outpipe)s)
             f = types.FunctionType(marshal.loads(code), globals(), 'f')
             f(*a, **kw)
-        """ % {
-            'pipe_r': pipe_r,
-            'inpipe': inpipe,
-            'outpipe': outpipe}).split('\n') if x)
+        """ % {'pipe_r': pipe_r}).split('\n') if x)
 
         argv = [sys.executable, '-c', bootstrap]
         os.execv(argv[0], argv)
