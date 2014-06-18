@@ -12,7 +12,6 @@ import socket
 import select
 import struct
 import heapq
-import fcntl
 import cffi
 import uuid
 import time
@@ -582,29 +581,24 @@ class Process(object):
         self.hub.signal.unsubscribe(self.sigchld)
 
     def bootstrap(self, f, inpipe, outpipe, *a, **kw):
-        import pickle
-        import json
-
-        # Depending on dill for the moment to be able to quickly push on in
-        # this direction, and to see if it's a good idea
-        import dill
+        import marshal
+        import cPickle as pickle
 
         self.set_pdeathsig()
 
         pipe_r, pipe_w = os.pipe()
 
-        os.write(pipe_w, json.dumps((pickle.dumps(f), a, kw)))
+        os.write(pipe_w, pickle.dumps((marshal.dumps(f.func_code), a, kw)))
         os.close(pipe_w)
 
         bootstrap = '\n'.join(x.strip() for x in ("""
-            import pickle
-            import json
+            import cPickle as pickle
+            import marshal
+            import types
             import sys
             import os
 
-            import dill
-
-            code, a, kw = json.loads(os.read(%(pipe_r)s, 4096))
+            code, a, kw = pickle.loads(os.read(%(pipe_r)s, 4096))
             os.close(%(pipe_r)s)
 
             os.dup2(%(inpipe)s, sys.stdin.fileno())
@@ -612,8 +606,7 @@ class Process(object):
 
             os.dup2(%(outpipe)s, sys.stdout.fileno())
             os.close(%(outpipe)s)
-
-            f = pickle.loads(code)
+            f = types.FunctionType(marshal.loads(code), globals(), 'f')
             f(*a, **kw)
         """ % {
             'pipe_r': pipe_r,
