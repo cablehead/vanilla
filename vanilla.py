@@ -648,6 +648,9 @@ class Process(object):
     def spawn(self, f, *a, **kw):
         return self.launch(self.bootstrap, f, *a, **kw)
 
+    def execv(self, *a):
+        return self.launch(os.execv, a[0], a)
+
 
 class Hub(object):
     def __init__(self):

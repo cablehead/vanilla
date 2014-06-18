@@ -239,6 +239,24 @@ class TestProcess(object):
         assert p.exitsignal == 0
         assert os.read(p.stdout, 4096) == 'Hi Toby'
 
+    def test_execv(self):
+        h = vanilla.Hub()
+
+        p = h.process.execv('/bin/grep', 'Toby')
+
+        import os
+        os.write(p.stdin, 'Hi toby\n')
+        os.write(p.stdin, 'Hi Toby\n')
+        os.close(p.stdin)
+
+        # TODO: need to wrap p.stdin/stdout with FD
+        h.sleep(10)
+        assert os.read(p.stdout, 4096) == 'Hi Toby\n'
+        p.done.recv()
+
+        assert p.exitcode == 0
+        assert p.exitsignal == 0
+
 
 def test_stop():
     """
