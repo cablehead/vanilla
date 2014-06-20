@@ -518,6 +518,9 @@ class INotify(object):
         self.fileno = C.inotify_init1(C.IN_NONBLOCK | C.IN_CLOEXEC)
         self.fd = FD(self.hub, self.fileno)
         self.wds = {}
+        for name in dir(C):
+            if name.startswith('IN_'):
+                setattr(self, name, getattr(C, name))
 
         @hub.spawn
         def _():
@@ -547,7 +550,10 @@ class Process(object):
             self.done = self.hub.channel()
 
         def check_liveness(self):
-            pid, code = os.waitpid(self.pid, os.WNOHANG)
+            try:
+                pid, code = os.waitpid(self.pid, os.WNOHANG)
+            except OSError:
+                return False
 
             if (pid, code) == (0, 0):
                 return True
@@ -562,7 +568,7 @@ class Process(object):
 
     def __init__(self, hub):
         self.hub = hub
-        self.children = {}
+        self.children = []
         self.sigchld = None
 
     def set_pdeathsig(self):
@@ -642,7 +648,7 @@ class Process(object):
         child = self.Child(self.hub, pid)
         child.stdin = FD(self.hub, C.unblock(inpipe_w))
         child.stdout = FD(self.hub, C.unblock(outpipe_r))
-        self.children[child] = child
+        self.children.append(child)
         return child
 
     def spawn(self, f, *a, **kw):
