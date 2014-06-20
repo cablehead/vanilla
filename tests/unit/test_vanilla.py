@@ -265,6 +265,29 @@ class TestProcess(object):
         assert p.exitcode == 220
         assert p.exitsignal == 0
 
+    def test_terminate(self):
+        h = vanilla.Hub()
+
+        def child():
+            import sys
+            import vanilla
+            h = vanilla.Hub()
+            h.stop_on_term()
+            sys.exit(11)
+
+        p = h.process.spawn(child)
+
+        assert p.check_liveness()
+
+        # need to give the child enough time to put it's signal trap in place
+        h.sleep(100)
+        p.terminate()
+        p.done.recv()
+        assert p.exitcode == 11
+        assert p.exitsignal == 0  # the sigterm was caught
+
+        assert not p.check_liveness()
+
     def test_execv(self):
         h = vanilla.Hub()
 

@@ -564,7 +564,7 @@ class Process(object):
             return False
 
         def terminate(self):
-            raise Exception('eep')
+            os.kill(self.pid, C.SIGTERM)
 
     def __init__(self, hub):
         self.hub = hub
