@@ -240,14 +240,14 @@ class TestProcess(object):
             import sys
             import vanilla
             h = vanilla.Hub()
-            message = h.stdin.recv_partition('\n')
+            message = h.stdin.recv_line()
             h.stdout.send(message+'\n')
             sys.exit(code)
 
         p = h.process.spawn(child, 220)
 
         p.stdin.send('Hi Toby\n')
-        assert p.stdout.recv_partition('\n') == 'Hi Toby'
+        assert p.stdout.recv_line() == 'Hi Toby'
 
         p.done.recv()
         assert p.exitcode == 220
@@ -260,7 +260,7 @@ class TestProcess(object):
 
         p.stdin.send('Hi toby\n')
         p.stdin.send('Hi Toby\n')
-        assert p.stdout.recv_partition('\n') == 'Hi Toby'
+        assert p.stdout.recv_line() == 'Hi Toby'
 
         p.stdin.close()
         p.done.recv()

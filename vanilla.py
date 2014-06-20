@@ -274,6 +274,9 @@ class FD(object):
                     self.pending.items.appendleft(additonal)
                 return keep
 
+    def recv_line(self):
+        return self.recv_partition('\n')
+
     def send(self, data):
         while True:
             n = os.write(self.fileno, data)
