@@ -622,12 +622,18 @@ class Process(object):
         os.execv(argv[0], argv)
 
     def launch(self, f, *a, **kw):
+        is_stdin_out = kw.pop('stdin_out', False)
+        is_stdin = kw.pop('stdin', False) or is_stdin_out
+        is_stdout = kw.pop('stdout', False) or is_stdin_out
+
         if not self.sigchld:
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
-        inpipe_r, inpipe_w = os.pipe()
-        outpipe_r, outpipe_w = os.pipe()
+        if is_stdin:
+            inpipe_r, inpipe_w = os.pipe()
+        if is_stdout:
+            outpipe_r, outpipe_w = os.pipe()
 
         pid = os.fork()
 
@@ -635,32 +641,38 @@ class Process(object):
             # child process
             self.set_pdeathsig()
 
-            os.close(inpipe_w)
-            os.dup2(inpipe_r, 0)
-            os.close(inpipe_r)
+            if is_stdin:
+                os.close(inpipe_w)
+                os.dup2(inpipe_r, 0)
+                os.close(inpipe_r)
 
-            os.close(outpipe_r)
-            os.dup2(outpipe_w, 1)
-            os.close(outpipe_w)
+            if is_stdout:
+                os.close(outpipe_r)
+                os.dup2(outpipe_w, 1)
+                os.close(outpipe_w)
 
             f(*a, **kw)
             return
 
         # parent continues
-        os.close(inpipe_r)
-        os.close(outpipe_w)
-
         child = self.Child(self.hub, pid)
-        child.stdin = FD(self.hub, C.unblock(inpipe_w))
-        child.stdout = FD(self.hub, C.unblock(outpipe_r))
+
+        if is_stdin:
+            os.close(inpipe_r)
+            child.stdin = FD(self.hub, C.unblock(inpipe_w))
+
+        if is_stdout:
+            os.close(outpipe_w)
+            child.stdout = FD(self.hub, C.unblock(outpipe_r))
+
         self.children.append(child)
         return child
 
     def spawn(self, f, *a, **kw):
         return self.launch(self.bootstrap, f, *a, **kw)
 
-    def execv(self, args):
-        return self.launch(os.execv, args[0], args)
+    def execv(self, args, **kw):
+        return self.launch(os.execv, args[0], args, **kw)
 
 
 class lazy(object):

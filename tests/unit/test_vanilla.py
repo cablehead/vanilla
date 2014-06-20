@@ -253,7 +253,7 @@ class TestProcess(object):
             h.stdout.send('peace.\n')
             sys.exit(code)
 
-        p = h.process.spawn(child, 220)
+        p = h.process.spawn(child, 220, stdin_out=True)
 
         p.stdin.send('Hi Toby\n')
         p.stdin.send('Hi Toby Toby\n')
@@ -293,7 +293,8 @@ class TestProcess(object):
     def test_execv(self):
         h = vanilla.Hub()
 
-        p = h.process.execv(['/bin/grep', '--line-buffered', 'Toby'])
+        p = h.process.execv(
+            ['/bin/grep', '--line-buffered', 'Toby'], stdin_out=True)
 
         p.stdin.send('Hi toby\n')
         p.stdin.send('Hi Toby\n')
