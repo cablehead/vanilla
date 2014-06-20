@@ -268,7 +268,7 @@ class TestProcess(object):
     def test_execv(self):
         h = vanilla.Hub()
 
-        p = h.process.execv('/bin/grep', '--line-buffered', 'Toby')
+        p = h.process.execv(['/bin/grep', '--line-buffered', 'Toby'])
 
         p.stdin.send('Hi toby\n')
         p.stdin.send('Hi Toby\n')

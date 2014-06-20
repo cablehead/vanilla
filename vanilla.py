@@ -654,8 +654,8 @@ class Process(object):
     def spawn(self, f, *a, **kw):
         return self.launch(self.bootstrap, f, *a, **kw)
 
-    def execv(self, *a):
-        return self.launch(os.execv, a[0], a)
+    def execv(self, args):
+        return self.launch(os.execv, args[0], args)
 
 
 class lazy(object):
