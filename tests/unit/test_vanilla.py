@@ -1,5 +1,6 @@
 import socket
 import signal
+import time
 
 
 import pytest
@@ -219,41 +220,50 @@ def test_INotify(tmpdir):
     assert inot.humanize_mask(mask) == ['modify']
 
 
+def test_lazy():
+    class C(object):
+        @vanilla.lazy
+        def now(self):
+            return time.time()
+
+    c = C()
+    want = c.now
+    time.sleep(0.01)
+    assert c.now == want
+
+
 class TestProcess(object):
     def test_spawn(self):
         h = vanilla.Hub()
 
         def child(code):
             import sys
-            message = sys.stdin.read()
-            sys.stdout.write(message)
+            import vanilla
+            h = vanilla.Hub()
+            message = h.stdin.recv_partition('\n')
+            h.stdout.send(message+'\n')
             sys.exit(code)
 
         p = h.process.spawn(child, 220)
 
-        import os
-        os.write(p.stdin, 'Hi Toby')
-        p.done.recv()
+        p.stdin.send('Hi Toby\n')
+        assert p.stdout.recv_partition('\n') == 'Hi Toby'
 
+        p.done.recv()
         assert p.exitcode == 220
         assert p.exitsignal == 0
-        assert os.read(p.stdout, 4096) == 'Hi Toby'
 
     def test_execv(self):
         h = vanilla.Hub()
 
-        p = h.process.execv('/bin/grep', 'Toby')
+        p = h.process.execv('/bin/grep', '--line-buffered', 'Toby')
 
-        import os
-        os.write(p.stdin, 'Hi toby\n')
-        os.write(p.stdin, 'Hi Toby\n')
-        os.close(p.stdin)
+        p.stdin.send('Hi toby\n')
+        p.stdin.send('Hi Toby\n')
+        assert p.stdout.recv_partition('\n') == 'Hi Toby'
 
-        # TODO: need to wrap p.stdin/stdout with FD
-        h.sleep(10)
-        assert os.read(p.stdout, 4096) == 'Hi Toby\n'
+        p.stdin.close()
         p.done.recv()
-
         assert p.exitcode == 0
         assert p.exitsignal == 0
 

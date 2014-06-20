@@ -11,6 +11,7 @@ import base64
 import socket
 import select
 import struct
+import fcntl
 import heapq
 import cffi
 import uuid
@@ -69,11 +70,6 @@ def init_C():
     ffi = cffi.FFI()
 
     ffi.cdef("""
-
-    int pipe2(int pipefd[2], int flags);
-
-    #define O_NONBLOCK ...
-    #define O_CLOEXEC ...
 
     ssize_t read(int fd, void *buf, size_t count);
 
@@ -169,12 +165,7 @@ def init_C():
     """)
 
     C = ffi.verify("""
-        #include <unistd.h>
-        #include <signal.h>
-        #include <fcntl.h>
-
         #include <sys/signalfd.h>
-        #include <sys/eventfd.h>
         #include <sys/inotify.h>
         #include <sys/epoll.h>
         #include <sys/prctl.h>
@@ -198,10 +189,11 @@ def init_C():
         return s
 
     @Cdot
-    def pipe():
-        fds = C.ffi.new('int[2]')
-        C.pipe2(fds, C.O_NONBLOCK)
-        return fds
+    def unblock(fd):
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL, 0)
+        flags = flags | os.O_NONBLOCK
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags)
+        return fd
 
     return C
 
@@ -212,7 +204,7 @@ C = init_C()
 class FD(object):
     def __init__(self, hub, fileno):
         self.hub = hub
-        self.fileno = fileno
+        self.fileno = C.unblock(fileno)
 
         self.events = hub.register(fileno, C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
 
@@ -241,7 +233,7 @@ class FD(object):
 
                     self.pending.send(data)
 
-            except Stop:
+            except Closed:
                 self.close()
                 return
 
@@ -616,8 +608,8 @@ class Process(object):
             self.sigchld = self.hub.signal.subscribe(C.SIGCHLD)
             self.hub.spawn(self.watch)
 
-        inpipe_r, inpipe_w = C.pipe()
-        outpipe_r, outpipe_w = C.pipe()
+        inpipe_r, inpipe_w = os.pipe()
+        outpipe_r, outpipe_w = os.pipe()
 
         pid = os.fork()
 
@@ -641,8 +633,8 @@ class Process(object):
         os.close(outpipe_w)
 
         child = self.Child(self.hub, pid)
-        child.stdin = inpipe_w
-        child.stdout = outpipe_r
+        child.stdin = FD(self.hub, C.unblock(inpipe_w))
+        child.stdout = FD(self.hub, C.unblock(outpipe_r))
         self.children[child] = child
         return child
 
@@ -651,6 +643,16 @@ class Process(object):
 
     def execv(self, *a):
         return self.launch(os.execv, a[0], a)
+
+
+class lazy(object):
+    def __init__(self, f):
+        self.f = f
+
+    def __get__(self, ob, type_=None):
+        value = self.f(ob)
+        setattr(ob, self.f.__name__, value)
+        return value
 
 
 class Hub(object):
@@ -668,6 +670,14 @@ class Hub(object):
         self.http = HTTP(self)
 
         self.loop = greenlet(self.main)
+
+    @lazy
+    def stdin(self):
+        return FD(self, sys.stdin.fileno())
+
+    @lazy
+    def stdout(self):
+        return FD(self, sys.stdout.fileno())
 
     def event(self, fired=False):
         return Event(self, fired)
@@ -751,12 +761,11 @@ class Hub(object):
     def unregister(self, fd):
         if fd in self.registered:
             try:
-                # TODO: investigate why this could error
                 self.epoll.unregister(fd)
             except:
                 pass
-            self.registered[fd].close()
-            del self.registered[fd]
+            ch = self.registered.pop(fd)
+            ch.close()
 
     def stop(self):
         self.sleep(1)
