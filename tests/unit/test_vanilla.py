@@ -240,14 +240,26 @@ class TestProcess(object):
             import sys
             import vanilla
             h = vanilla.Hub()
-            message = h.stdin.recv_line()
-            h.stdout.send(message+'\n')
+
+            while True:
+                try:
+                    message = h.stdin.recv_line()
+                    h.stdout.send(message+'\n')
+                except vanilla.Closed:
+                    break
+
+            h.stdout.send('peace.\n')
             sys.exit(code)
 
         p = h.process.spawn(child, 220)
 
         p.stdin.send('Hi Toby\n')
+        p.stdin.send('Hi Toby Toby\n')
         assert p.stdout.recv_line() == 'Hi Toby'
+        assert p.stdout.recv_line() == 'Hi Toby Toby'
+
+        p.stdin.close()
+        assert p.stdout.recv_line() == 'peace.'
 
         p.done.recv()
         assert p.exitcode == 220

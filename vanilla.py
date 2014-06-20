@@ -243,6 +243,10 @@ class FD(object):
             os.close(self.fileno)
         except:
             pass
+        try:
+            self.pending.close()
+        except Closed:
+            pass
 
     def recv_bytes(self, n):
         if n == 0:
@@ -1390,7 +1394,10 @@ class HTTPClient(object):
 
     def receiver(self):
         while True:
-            status = self.http.recv_response()
+            try:
+                status = self.http.recv_response()
+            except Closed:
+                break
             ch = self.responses.popleft()
             ch.send(status)
 
