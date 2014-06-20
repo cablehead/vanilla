@@ -219,6 +219,8 @@ def test_INotify(tmpdir):
     assert name == 'f1'
     assert inot.humanize_mask(mask) == ['modify']
 
+    h.stop()
+
 
 def test_lazy():
     class C(object):

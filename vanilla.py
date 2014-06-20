@@ -525,7 +525,12 @@ class INotify(object):
         @hub.spawn
         def _():
             while True:
-                notification = self.fd.recv_bytes(16)
+                try:
+                    notification = self.fd.recv_bytes(16)
+                except Closed:
+                    for wd in self.wds:
+                        self.wds[wd].close()
+                    return
                 wd, mask, cookie, size = struct.unpack("=LLLL", notification)
                 if size:
                     name = self.fd.recv_bytes(size).rstrip('\0')
