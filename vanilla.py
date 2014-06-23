@@ -1273,7 +1273,7 @@ class HTTPSocket(object):
             if not line:
                 break
             k, v = line.split(': ', 1)
-            headers[k] = v
+            headers[k] = v.strip()
         return headers
 
     def recv_request(self):
