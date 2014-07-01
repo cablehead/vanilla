@@ -716,7 +716,8 @@ class Hub(object):
         return Channel(self)
 
     # allows you to wait on a list of channels
-    def select(self, *channels):
+    def select(self, *channels, **kw):
+        timeout = kw.pop('timeout', -1)
         for ch in channels:
             try:
                 item = ch.recv(timeout=0)
@@ -724,11 +725,14 @@ class Hub(object):
             except Timeout:
                 continue
 
+        if timeout == 0:
+            raise Timeout('timeout: %s' % timeout)
+
         for ch in channels:
             ch.waiters.append(getcurrent())
 
         try:
-            fired, item = self.pause()
+            fired, item = self.pause(timeout=timeout)
         except:
             for ch in channels:
                 if getcurrent() in ch.waiters:

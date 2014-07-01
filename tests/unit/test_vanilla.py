@@ -146,6 +146,22 @@ def test_select():
     pytest.raises(Exception, check.recv)
 
 
+def test_select_timeout():
+    h = vanilla.Hub()
+    c = h.channel()
+
+    @h.spawn
+    def _():
+        while True:
+            h.sleep(20)
+            c.send('hi')
+
+    fired, item = h.select(c, timeout=30)
+    assert fired == c and item == 'hi'
+
+    pytest.raises(vanilla.Timeout, h.select, c, timeout=5)
+
+
 def test_Signal():
     h = vanilla.Hub()
 
