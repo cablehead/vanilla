@@ -536,3 +536,35 @@ class TestHTTP(object):
         message = 'x' * 65536
         ws.send(message)
         assert ws.recv() == message
+
+
+class TestReactive(object):
+    """
+    experiment with providing a reactive like paradigm to help shape Vanilla's
+    API: https://gist.github.com/staltz/868e7e9bc2a7b8c1f754
+    """
+    def test_clicks(self):
+        h = vanilla.Hub()
+
+        # TODO: the concept of piping clicks through f to produce counts would
+        # be more natural
+        clicks = h.channel()
+        counts = h.channel()
+
+        @h.spawn
+        def f():
+            for click in clicks:
+                count = 1
+                while True:
+                    try:
+                        clicks.recv(timeout=10)
+                        count += 1
+                    except vanilla.Timeout:
+                        counts.send(count)
+                        break
+
+        for i in [15, 5, 15, 15, 5, 5, 15, 15]:
+            clicks.send('click')
+            h.sleep(i)
+
+        assert list(counts) == [1, 2, 1, 3, 1]
