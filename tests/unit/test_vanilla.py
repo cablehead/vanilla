@@ -190,7 +190,7 @@ def test_INotify(tmpdir):
     inot = h.inotify()
     ch1 = inot.watch(tmpdir.strpath)
 
-    fh = tmpdir.join('f1').open('w')
+    fh1 = tmpdir.join('f1').open('w')
     mask, name = ch1.recv()
     assert name == 'f1'
     assert inot.humanize_mask(mask) == ['create']
@@ -205,7 +205,9 @@ def test_INotify(tmpdir):
 
     ch2 = inot.watch(tmpdir.join('d').strpath)
 
-    tmpdir.join('d', 'f2').open('w').write('data')
+    fh2 = tmpdir.join('d', 'f2').open('w')
+    fh2.write('data')
+    fh2.close()
 
     ch, (mask, name) = h.select(ch1, ch2)
     assert ch == ch2
@@ -217,8 +219,8 @@ def test_INotify(tmpdir):
     assert name == 'f2'
     assert inot.humanize_mask(mask) == ['open']
 
-    fh.write('data')
-    fh.close()
+    fh1.write('data')
+    fh1.close()
 
     ch, (mask, name) = h.select(ch1, ch2)
     assert ch == ch2
@@ -298,7 +300,7 @@ class TestProcess(object):
         assert p.check_liveness()
 
         # need to give the child enough time to put it's signal trap in place
-        h.sleep(100)
+        h.sleep(300)
         p.terminate()
         p.done.recv()
         assert p.exitcode == 11

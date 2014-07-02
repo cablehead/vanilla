@@ -165,6 +165,7 @@ def init_C():
     """)
 
     C = ffi.verify("""
+        #include <signal.h>
         #include <sys/signalfd.h>
         #include <sys/inotify.h>
         #include <sys/epoll.h>
@@ -1502,7 +1503,7 @@ class HTTPClient(object):
         assert headers['Sec-WebSocket-Accept'] == WebSocket.accept_key(key)
 
         ws = WebSocket(self.http.fd)
-        # TODO: the connection gets garbage collector unless we keep a
+        # TODO: the connection gets garbage collected unless we keep a
         # reference to it
         ws.conn = self.conn
         return ws
