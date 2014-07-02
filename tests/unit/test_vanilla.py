@@ -1,6 +1,7 @@
 import socket
 import signal
 import time
+import os
 
 
 import pytest
@@ -275,6 +276,7 @@ class TestProcess(object):
 
         p.stdin.send('Hi Toby\n')
         p.stdin.send('Hi Toby Toby\n')
+
         assert p.stdout.recv_line() == 'Hi Toby'
         assert p.stdout.recv_line() == 'Hi Toby Toby'
 
@@ -402,44 +404,56 @@ def test_TCP():
     assert echo.closed == 1
 
 
-def test_FD():
-    h = vanilla.Hub()
+class TestFD(object):
+    def test_halfplex(self):
+        h = vanilla.Hub()
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(('127.0.0.1', 0))
-    s.listen(socket.SOMAXCONN)
+        pipe_r, pipe_w = os.pipe()
+        fd_r = vanilla.FD(h, pipe_r)
+        fd_w = vanilla.FD(h, pipe_w)
 
-    port = s.getsockname()[1]
+        fd_w.send('Toby')
+        assert fd_r.recv_bytes(4) == 'Toby'
 
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(('127.0.0.1', port))
+    def test_duplex(self):
+        h = vanilla.Hub()
 
-    conn, host = s.accept()
-    conn.setblocking(0)
-    fd = vanilla.FD(h, conn.fileno())
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(('127.0.0.1', 0))
+        s.listen(socket.SOMAXCONN)
 
-    def chunks(l, n):
-        """
-        Yield successive n-sized chunks from l.
-        """
-        for i in xrange(0, len(l), n):
-            yield l[i:i+n]
+        port = s.getsockname()[1]
 
-    @h.spawn
-    def _():
-        for chunk in chunks(('12'*8)+'foo\r\nbar\r\n\r\n', 3):
-            h.sleep(10)
-            client.sendall(chunk)
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(('127.0.0.1', port))
+        client_fd = vanilla.FD(h, client.fileno())
 
-    assert fd.recv_bytes(5) == '12121'
-    assert fd.recv_bytes(5) == '21212'
-    assert fd.recv_bytes(5) == '12121'
-    assert fd.recv_partition('\r\n') == '2foo'
-    assert fd.recv_partition('\r\n') == 'bar'
-    assert fd.recv_partition('\r\n') == ''
+        conn, host = s.accept()
+        conn.setblocking(0)
+        fd = vanilla.FD(h, conn.fileno())
 
-    # h.stop_on_term()
+        def chunks(l, n):
+            """
+            Yield successive n-sized chunks from l.
+            """
+            for i in xrange(0, len(l), n):
+                yield l[i:i+n]
+
+        @h.spawn
+        def _():
+            for chunk in chunks(('12'*8)+'foo\r\nbar\r\n\r\n', 3):
+                h.sleep(10)
+                client_fd.send(chunk)
+
+        assert fd.recv_bytes(5) == '12121'
+        assert fd.recv_bytes(5) == '21212'
+        assert fd.recv_bytes(5) == '12121'
+        assert fd.recv_partition('\r\n') == '2foo'
+        assert fd.recv_partition('\r\n') == 'bar'
+        assert fd.recv_partition('\r\n') == ''
+
+        # h.stop_on_term()
 
 
 class TestHTTP(object):

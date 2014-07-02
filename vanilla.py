@@ -95,6 +95,7 @@ def init_C():
     #define EAGAIN ...
 
     #define EPOLLIN ...
+    #define EPOLLOUT ...
     #define EPOLLERR ...
     #define EPOLLHUP ...
     #define EPOLLRDHUP ...
@@ -207,47 +208,93 @@ class FD(object):
         self.hub = hub
         self.fileno = C.unblock(fileno)
 
-        self.events = hub.register(fileno, C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
+        self.mask = C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR
+        self.evts = hub.register(self.fileno, self.mask)
 
-        self.hub.spawn(self.loop)
-        self.pending = self.hub.channel()
+        self.recv_ready = hub.event(False)
+        self.send_ready = hub.event(False)
 
-    def loop(self):
-        while True:
-            try:
-                fileno, event = self.events.recv()
-                if event & select.EPOLLERR or event & select.EPOLLHUP:
+        self.recv_pending = self.hub.channel()
+        self.send_pending = self.hub.channel()
+
+        self.hub.spawn(self.evts_loop)
+        self.hub.spawn(self.recv_loop)
+        self.hub.spawn(self.send_loop)
+
+    def evts_loop(self):
+        try:
+            while True:
+                fileno, event = self.evts.recv()
+                if event & C.EPOLLERR or event & C.EPOLLHUP:
+                    raise Stop
+                elif event & C.EPOLLIN:
+                    self.recv_ready.set()
+                elif event & C.EPOLLOUT:
+                    self.send_ready.set()
+        except Closed:
+            self.close()
+            return
+
+    def recv_loop(self):
+        try:
+
+            while True:
+                try:
+                    data = os.read(self.fileno, 4096)
+                except OSError, e:
+                    # resource unavailable, block until it is
+                    if e.errno == 11:  # EAGAIN
+                        self.recv_ready.clear().wait()
+                        continue
                     raise Stop
 
-                # read until exhaustion
+                if not data:
+                    raise Stop
+
+                self.recv_pending.send(data)
+
+        except Closed:
+            self.recv_pending.close()
+            self.shutdown()
+            return
+
+    def send_loop(self):
+        try:
+            while True:
+                data = self.send_pending.recv()
                 while True:
                     try:
-                        data = os.read(self.fileno, 4096)
+                        n = os.write(self.fileno, data)
                     except OSError, e:
                         # resource unavailable, block until it is
                         if e.errno == 11:  # EAGAIN
-                            break
+                            self.mask |= C.EPOLLOUT
+                            self.hub.epoll.modify(self.fileno, self.mask)
+                            self.send_ready.clear().wait()
+                            self.mask ^= C.EPOLLOUT
+                            self.hub.epoll.modify(self.fileno, self.mask)
+                            continue
                         raise Stop
+                    if n == len(data):
+                        break
+                    data = data[n:]
+        except Closed:
+            self.send_pending.close()
+            self.shutdown()
+            return
 
-                    if not data:
-                        raise Stop
-
-                    self.pending.send(data)
-
-            except Closed:
-                self.close()
-                return
+    def shutdown(self):
+        if self.recv_pending.closed and self.send_pending.closed:
+            self.hub.unregister(self.fileno)
+            try:
+                os.close(self.fileno)
+            except:
+                pass
 
     def close(self):
-        self.hub.unregister(self.fileno)
-        try:
-            os.close(self.fileno)
-        except:
-            pass
-        try:
-            self.pending.close()
-        except Closed:
-            pass
+        self.recv_pending.close()
+        self.send_pending.close()
+        self.shutdown()
 
     def recv_bytes(self, n):
         if n == 0:
@@ -256,7 +303,7 @@ class FD(object):
         received = 0
         segments = []
         while received < n:
-            segment = self.pending.recv()
+            segment = self.recv_pending.recv()
             segments.append(segment)
             received += len(segment)
 
@@ -264,7 +311,7 @@ class FD(object):
         # additional portion to pending
         overage = received - n
         if overage:
-            self.pending.items.appendleft(segments[-1][-1*(overage):])
+            self.recv_pending.items.appendleft(segments[-1][-1*(overage):])
             segments[-1] = segments[-1][:-1*(overage)]
 
         return ''.join(segments)
@@ -272,22 +319,18 @@ class FD(object):
     def recv_partition(self, sep):
         received = ''
         while True:
-            received += self.pending.recv()
+            received += self.recv_pending.recv()
             keep, matched, additonal = received.partition(sep)
             if matched:
                 if additonal:
-                    self.pending.items.appendleft(additonal)
+                    self.recv_pending.items.appendleft(additonal)
                 return keep
 
     def recv_line(self):
         return self.recv_partition('\n')
 
     def send(self, data):
-        while True:
-            n = os.write(self.fileno, data)
-            if n == len(data):
-                break
-            data = data[n:]
+        self.send_pending.send(data)
 
 
 class Event(object):
@@ -399,8 +442,9 @@ class Channel(object):
                 raise StopIteration
 
     def close(self):
-        self.send(Closed('closed'))
-        self.closed = True
+        if not self.closed:
+            self.send(Closed('closed'))
+            self.closed = True
 
 
 class Signal(object):
@@ -417,7 +461,7 @@ class Signal(object):
         info = C.ffi.new('struct signalfd_siginfo *')
         size = C.ffi.sizeof('struct signalfd_siginfo')
 
-        ready = self.hub.register(fd, select.EPOLLIN)
+        ready = self.hub.register(fd, C.EPOLLIN)
 
         @self.hub.spawn
         def _():
@@ -1009,7 +1053,7 @@ class TCPConn(object):
 
         self.events = hub.register(
             conn.fileno(),
-            select.EPOLLIN | select.EPOLLHUP | select.EPOLLERR)
+            C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR)
 
         hub.spawn(self.event_loop)
         hub.spawn(self.recv_loop)
@@ -1018,10 +1062,10 @@ class TCPConn(object):
         while True:
             try:
                 fd, event = self.events.recv()
-                if event & select.EPOLLERR or event & select.EPOLLHUP:
+                if event & C.EPOLLERR or event & C.EPOLLHUP:
                     self.close()
                     return
-                if event & select.EPOLLIN:
+                if event & C.EPOLLIN:
                     if self.recv_closed:
                         if not self.serve_in_progress:
                             self.close()
@@ -1183,7 +1227,7 @@ class TCPListener(object):
         self.port = s.getsockname()[1]
         self.accept = hub.channel()
 
-        self.ch = hub.register(s.fileno(), select.EPOLLIN)
+        self.ch = hub.register(s.fileno(), C.EPOLLIN)
         hub.spawn(self.loop)
 
     def loop(self):
@@ -1586,7 +1630,7 @@ class HTTPListener(object):
         hub.spawn(self.accept)
 
     def accept(self):
-        ready = self.hub.register(self.sock.fileno(), select.EPOLLIN)
+        ready = self.hub.register(self.sock.fileno(), C.EPOLLIN)
         while True:
             try:
                 ready.recv()
