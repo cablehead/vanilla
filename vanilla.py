@@ -60,9 +60,9 @@ class preserve_exception(object):
     def reraise(self):
         try:
             raise Reraise('Unhandled exception')
-        except:
-            traceback.print_exc()
-            sys.stderr.write('\nOriginal exception -->\n\n')
+        except Exception, e:
+            log.exception(e)
+            log.error('\nOriginal exception -->\n')
             raise self.typ, self.val, self.tb
 
 
@@ -373,32 +373,31 @@ class Event(object):
 
 class Channel(object):
 
-    __slots__ = ['hub', 'closed', 'pipeline', 'items', 'waiters']
+    __slots__ = ['hub', 'closed', 'items', 'waiters']
 
     def __init__(self, hub):
         self.hub = hub
         self.closed = False
-        self.pipeline = None
         self.items = collections.deque()
         self.waiters = collections.deque()
 
-    def __call__(self, f):
-        if not self.pipeline:
-            self.pipeline = []
-        self.pipeline.append(f)
+    def pipe(self, f):
+        out = self.hub.channel()
+        @self.hub.spawn
+        def _():
+            while True:
+                try:
+                    f(self, out)
+                except Stop:
+                    out.close()
+                    return
+                except Exception, e:
+                    self.hub.spawn_later(1, out.send, e)
+        return out
 
     def send(self, item):
         if self.closed:
             raise Closed
-
-        if self.pipeline and not isinstance(item, Closed):
-            try:
-                for f in self.pipeline:
-                    item = f(item)
-            except Filter:
-                return
-            except Exception, e:
-                item = e
 
         if not self.waiters:
             self.items.append(item)

@@ -84,30 +84,30 @@ def test_Channel():
         c.throw()
     pytest.raises(CheckException, c.recv)
 
-    # test pipeline
-    @c
-    def _(x):
-        if x % 2:
-            raise vanilla.Filter
-        return x * 2
+    # test pipe
+    @c.pipe
+    def out(c, out):
+        for x in c:
+            if not x % 2:
+                out.send(x*2)
 
     # assert exceptions are propogated
     c.send('123')
-    pytest.raises(TypeError, c.recv)
+    pytest.raises(TypeError, out.recv)
 
     # odd numbers are filtered
     c.send(5)
-    pytest.raises(vanilla.Timeout, c.recv, timeout=0)
+    pytest.raises(vanilla.Timeout, out.recv, timeout=0)
 
     # success
     c.send(2)
-    assert 4 == c.recv(timeout=0)
+    assert 4 == out.recv(timeout=0)
 
     # test closing the channel and channel iteration
     for i in xrange(10):
         c.send(i)
     c.close()
-    assert list(c) == [0, 4, 8, 12, 16]
+    assert list(out) == [0, 4, 8, 12, 16]
 
 
 def test_select():
@@ -562,13 +562,10 @@ class TestReactive(object):
     def test_clicks(self):
         h = vanilla.Hub()
 
-        # TODO: the concept of piping clicks through f to produce counts would
-        # be more natural
         clicks = h.channel()
-        counts = h.channel()
 
-        @h.spawn
-        def f():
+        @clicks.pipe
+        def count(clicks, out):
             for click in clicks:
                 count = 1
                 while True:
@@ -576,11 +573,11 @@ class TestReactive(object):
                         clicks.recv(timeout=10)
                         count += 1
                     except vanilla.Timeout:
-                        counts.send(count)
+                        out.send(count)
                         break
 
         for i in [15, 5, 15, 15, 5, 5, 15, 15]:
             clicks.send('click')
             h.sleep(i)
 
-        assert list(counts) == [1, 2, 1, 3, 1]
+        assert list(count) == [1, 2, 1, 3, 1]
