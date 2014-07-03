@@ -372,22 +372,27 @@ class Event(object):
 
 class Channel(object):
 
-    __slots__ = ['hub', 'closed', 'items', 'waiters']
+    __slots__ = ['hub', 'closed', 'items', 'waiters', 'pipes']
 
     def __init__(self, hub):
         self.hub = hub
         self.closed = False
         self.items = collections.deque()
         self.waiters = collections.deque()
+        self.pipes = None
 
     def pipe(self, f):
+        in_ = self.hub.channel()
         out = self.hub.channel()
+
+        self.pipes = self.pipes or []
+        self.pipes.append(in_)
 
         @self.hub.spawn
         def _():
             while True:
                 try:
-                    f(self, out)
+                    f(in_, out)
                 except Stop:
                     out.close()
                     return
@@ -395,9 +400,56 @@ class Channel(object):
                     self.hub.spawn_later(1, out.send, e)
         return out
 
+    def throttle(self, ms):
+        @self.pipe
+        def throttled(in_, out):
+            for x in in_:
+                while True:
+                    try:
+                        x = in_.recv(timeout=10)
+                    except Timeout:
+                        out.send(x)
+                        break
+        return throttled
+
+    def buffer(self, signal):
+        @self.pipe
+        def buffered(in_, out):
+            h = signal.hub
+            window = []
+            while True:
+                ch, item = h.select(signal, in_)
+                if ch == in_:
+                    window.append(item)
+                else:
+                    out.send(window)
+                    window = []
+        return buffered
+
+    def map(self, f):
+        @self.pipe
+        def mapped(in_, out):
+            for x in in_:
+                out.send(f(x))
+        return mapped
+
+    def filter(self, f):
+        @self.pipe
+        def filtered(in_, out):
+            for x in in_:
+                if f(x):
+                    out.send(x)
+        return filtered
+
     def send(self, item):
         if self.closed:
             raise Closed
+
+        # TODO: it's likely if the channel is piped, we don't want it's waiters
+        # queue to fill up
+        if self.pipes:
+            for pipe in self.pipes:
+                pipe.send(item)
 
         if not self.waiters:
             self.items.append(item)

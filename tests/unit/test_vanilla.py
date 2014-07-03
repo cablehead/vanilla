@@ -563,30 +563,14 @@ class TestReactive(object):
         h = vanilla.Hub()
 
         clicks = h.channel()
-
-        """
-        This interface would be possible. But do we want that?!
         out = (
             clicks
                 .buffer(clicks.throttle(10))
                 .map(len)
                 .filter(lambda x: x >= 2))
-        """
-
-        @clicks.pipe
-        def count(clicks, out):
-            for click in clicks:
-                count = 1
-                while True:
-                    try:
-                        clicks.recv(timeout=10)
-                        count += 1
-                    except vanilla.Timeout:
-                        out.send(count)
-                        break
 
         for i in [15, 5, 15, 15, 5, 5, 15, 15]:
             clicks.send('click')
             h.sleep(i)
 
-        assert list(count) == [1, 2, 1, 3, 1]
+        assert list(out) == [2, 3]
