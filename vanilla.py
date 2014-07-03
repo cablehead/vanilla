@@ -1,7 +1,6 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
 import collections
-import traceback
 import functools
 import urlparse
 import hashlib
@@ -383,6 +382,7 @@ class Channel(object):
 
     def pipe(self, f):
         out = self.hub.channel()
+
         @self.hub.spawn
         def _():
             while True:

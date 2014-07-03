@@ -564,6 +564,15 @@ class TestReactive(object):
 
         clicks = h.channel()
 
+        """
+        This interface would be possible. But do we want that?!
+        out = (
+            clicks
+                .buffer(clicks.throttle(10))
+                .map(len)
+                .filter(lambda x: x >= 2))
+        """
+
         @clicks.pipe
         def count(clicks, out):
             for click in clicks:
