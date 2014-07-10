@@ -167,6 +167,7 @@ def init_C():
     C = ffi.verify("""
         #include <signal.h>
         #include <sys/signalfd.h>
+        #include <sys/eventfd.h>
         #include <sys/inotify.h>
         #include <sys/epoll.h>
         #include <sys/prctl.h>
