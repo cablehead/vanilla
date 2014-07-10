@@ -1510,7 +1510,6 @@ class HTTPClient(object):
             ('Accept', '*/*'),
             ('User-Agent', self.agent),
             ('Host', parsed.netloc), ])
-            # ('Connection', 'Close'), ])
 
         self.responses = collections.deque()
         hub.spawn(self.receiver)
@@ -1695,7 +1694,7 @@ class HTTPListener(object):
         conn.setblocking(0)
         http = HTTPSocket(FD(self.hub, conn.fileno()))
 
-        #TODO: support http keep alives
+        # TODO: support http keep alives
         request = http.recv_request()
         response = self.Response(request, http, self.hub.channel())
 
