@@ -1342,6 +1342,9 @@ class HTTP(object):
     def connect(self, url):
         return HTTPClient(self.hub, url)
 
+    def cup(self, port=0, host='127.0.0.1'):
+        return HTTPCup(self.hub, host, port)
+
 
 class HTTPSocket(object):
 
@@ -1731,3 +1734,50 @@ class HTTPListener(object):
         except:
             pass
         self.sock.close()
+
+
+class HTTPCup(object):
+    """
+    Sintra style micro-web framework
+
+    TODO: all of HTTP should go into it's of module, but in-particular this
+    *really* should!
+    """
+    def __init__(self, hub, host, port):
+        # 3rd party dependency
+        import routes
+        self.hub = hub
+        self.server = HTTPListener(hub, host, port, self.serve)
+        self.port = self.server.port
+
+        self.routes = routes.Mapper()
+        self.actions = {}
+
+    def serve(self, request, response):
+        path, query = urllib.splitquery(request.path)
+        environ = {'REQUEST_METHOD': request.method}
+        match = self.routes.match(path, environ=environ)
+
+        if not match:
+            response.status = (404, 'Not Found')
+            return 'Sorry chief, page not found.'
+
+        f = match.pop('f')
+        return f(request, response)
+
+    def _add_route(self, path, method, f):
+        def wrap(*a, **kw):
+            target = self.actions[f]
+            return target(*a, **kw)
+
+        f.action = f
+        self.actions[f] = f
+
+        if method:
+            self.routes.connect(path, f=wrap, conditions={'method': [method]})
+        else:
+            self.routes.connect(path, f=wrap)
+        return f
+
+    def route(self, path):
+        return functools.partial(self._add_route, path, None)

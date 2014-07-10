@@ -574,3 +574,22 @@ class TestReactive(object):
             h.sleep(i)
 
         assert list(out) == [2, 3]
+
+
+class TestCup(object):
+    def conn(self, app):
+        return app.hub.http.connect('http://localhost:%s' % app.port)
+
+    def test_basic(self):
+        h = vanilla.Hub()
+        app = h.http.cup()
+
+        @app.route('/')
+        def index(request, response):
+            return 'index'
+
+        ch = self.conn(app).get('/')
+        ch.recv()  # status
+        ch.recv()  # headers
+        body = ch.recv()
+        assert body == 'index'
