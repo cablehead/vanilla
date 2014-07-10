@@ -565,9 +565,9 @@ class TestReactive(object):
         clicks = h.channel()
         out = (
             clicks
-                .buffer(clicks.throttle(10))
-                .map(len)
-                .filter(lambda x: x >= 2))
+            .buffer(clicks.throttle(10))
+            .map(len)
+            .filter(lambda x: x >= 2))
 
         for i in [15, 5, 15, 15, 5, 5, 15, 15]:
             clicks.send('click')
