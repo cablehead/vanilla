@@ -1343,8 +1343,8 @@ class HTTP(object):
     def connect(self, url):
         return HTTPClient(self.hub, url)
 
-    def cup(self, port=0, host='127.0.0.1'):
-        return HTTPCup(self.hub, host, port)
+    def cup(self, port=0, host='127.0.0.1', base_path=None):
+        return HTTPCup(self.hub, host, port, base_path=base_path)
 
 
 class HTTPSocket(object):
@@ -1752,15 +1752,24 @@ class HTTPCup(object):
     TODO: all of HTTP should go into it's of module, but in-particular this
     *really* should!
     """
-    def __init__(self, hub, host, port):
+    def __init__(self, hub, host, port, base_path=None):
         # 3rd party dependency
         import routes
+
         self.hub = hub
+        self.base_path = base_path
+
         self.server = HTTPListener(hub, host, port, self.serve)
         self.port = self.server.port
 
         self.routes = routes.Mapper()
         self.actions = {}
+
+    def path(self, *a):
+        # TODO: this isn't secure, use something like twisted.python.filepath
+        if self.base_path is not None:
+            a = [self.base_path] + list(a)
+        return os.path.join(*a)
 
     def serve(self, request, response):
         path, query = urllib.splitquery(request.path)
@@ -1807,9 +1816,8 @@ class HTTPCup(object):
         if encoding:
             response.headers['Content-Encoding'] = encoding
 
-        # TODO: this isn't secure, use something like twisted.python.filepath
         try:
-            fh = open('%s/%s' % (directory, filename))
+            fh = open(self.path(directory, filename))
         except:
             # TODO:
             raise response.HTTP404

@@ -604,8 +604,8 @@ class TestCup(object):
 
     def test_static(self, tmpdir):
         h = vanilla.Hub()
-        app = h.http.cup()
-        app.static('/static', tmpdir.strpath)
+        app = h.http.cup(base_path=tmpdir.strpath)
+        app.static('/static', '.')
 
         tmpdir.join('foo.html').open('w').write('bar')
 
