@@ -9,7 +9,9 @@ from setuptools import setup
 metadata = dict(
     re.findall("__([a-z]+)__ = '([^']+)'", open('vanilla.py').read()))
 
-requirements = [x.strip() for x in open('requirements.txt').readlines()]
+requirements = [
+    x.strip() for x
+    in open('requirements.txt').readlines() if not x.startswith('#')]
 
 description = "Fast, concurrent, micro server Python library" \
               " http://cablehead.viewdocs.io/vanilla"

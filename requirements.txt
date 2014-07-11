@@ -1,2 +1,4 @@
 greenlet
 cffi
+# just needed until vanilla.http.cup is moved to a seperate module
+routes
