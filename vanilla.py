@@ -1789,3 +1789,12 @@ class HTTPCup(object):
 
     def route(self, path):
         return functools.partial(self._add_route, path, None)
+
+    def get(self, path):
+        return functools.partial(self._add_route, path, "GET")
+
+    def post(self, path):
+        return functools.partial(self._add_route, path, "POST")
+
+    def put(self, path):
+        return functools.partial(self._add_route, path, "PUT")

@@ -587,3 +587,17 @@ class TestCup(object):
         response = self.conn(app).get('/').recv()
         assert response.status.code == 200
         assert response.consume() == 'index'
+
+    def test_method(self):
+        h = vanilla.Hub()
+        app = h.http.cup()
+
+        @app.route('/')
+        def index(request, response):
+            return request.method
+
+        conn = self.conn(app)
+
+        response = conn.get('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'GET'
