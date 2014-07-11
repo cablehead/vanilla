@@ -17,39 +17,34 @@ def test_HTTPClient():
     drip = conn.get('/drip', params={'numbytes': 3, 'duration': 3, 'delay': 1})
     get2 = conn.get('/get', params={'foo': 'bar2'})
 
-    status, headers, body = list(get1)
-    assert status.code == 200
-    assert json.loads(body)['args'] == {'foo': 'bar'}
+    response = get1.recv()
+    assert response.status.code == 200
+    assert json.loads(response.consume())['args'] == {'foo': 'bar'}
 
     # assert the first payload from drip takes roughly a second
     start = time.time()
-    assert drip.recv().code == 200
+    response = drip.recv()
     took, start = time.time() - start, time.time()
     assert 1.5 > took > 1
+    assert response.status.code == 200
 
-    # assert we're getting a chunked response, and the headers came immediately
-    assert drip.recv()['transfer-encoding'] == 'chunked'
-    took, start = time.time() - start, time.time()
-    assert took < 0.0003
+    # response should be chunked
+    assert response.headers['transfer-encoding'] == 'chunked'
 
-    # the first chunk also comes immediately
-    assert drip.recv() == '*'
+    # the first chunk should come immediately
+    assert response.body.recv() == '*'
     took, start = time.time() - start, time.time()
-    assert took < 0.002
+    assert took < 0.005
 
     # check remaining chunks come every second
-    for item in drip:
+    for item in response.body.recv():
         took, start = time.time() - start, time.time()
         assert item == '*'
-        assert 1.1 > took > .9
+        assert 1.4 > took > .8
 
-    # and finally another second for the server to end the response
-    took, start = time.time() - start, time.time()
-    assert 1.1 > took > .9
-
-    status, headers, body = list(get2)
-    assert status.code == 200
-    assert json.loads(body)['args'] == {'foo': 'bar2'}
+    response = get2.recv()
+    assert response.status.code == 200
+    assert json.loads(response.consume())['args'] == {'foo': 'bar2'}
 
 
 def test_WebSocketClient():

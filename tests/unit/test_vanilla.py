@@ -467,15 +467,13 @@ class TestHTTP(object):
 
         uri = 'http://localhost:%s' % serve.port
 
-        response = h.http.connect(uri).get('/')
-        assert response.recv().code == 200
-        response.recv()
-        assert response.recv() == ''
+        response = h.http.connect(uri).get('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == ''
 
-        response = h.http.connect(uri).get('/toby')
-        assert response.recv().code == 200
-        response.recv()
-        assert response.recv() == 'toby'
+        response = h.http.connect(uri).get('/toby').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'toby'
 
         h.stop()
 
@@ -492,15 +490,13 @@ class TestHTTP(object):
 
         uri = 'http://localhost:%s' % serve.port
 
-        response = h.http.connect(uri).get('/')
-        got = list(response)
-        assert got[0].code == 200
-        assert got[2:] == ['0', '1', '2']
+        response = h.http.connect(uri).get('/').recv()
+        assert response.status.code == 200
+        assert list(response.body) == ['0', '1', '2']
 
-        response = h.http.connect(uri).get('/peace')
-        got = list(response)
-        assert got[0].code == 200
-        assert got[2:] == ['0', '1', '2', 'peace']
+        response = h.http.connect(uri).get('/peace').recv()
+        assert response.status.code == 200
+        assert list(response.body) == ['0', '1', '2', 'peace']
 
         h.stop()
 
@@ -588,8 +584,6 @@ class TestCup(object):
         def index(request, response):
             return 'index'
 
-        ch = self.conn(app).get('/')
-        ch.recv()  # status
-        ch.recv()  # headers
-        body = ch.recv()
-        assert body == 'index'
+        response = self.conn(app).get('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'index'

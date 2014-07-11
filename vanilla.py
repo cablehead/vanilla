@@ -1494,6 +1494,16 @@ class WebSocket(object):
 
 
 class HTTPClient(object):
+
+    class Response(object):
+        def __init__(self, status, headers, body):
+            self.status = status
+            self.headers = headers
+            self.body = body
+
+        def consume(self):
+            return ''.join(self.body)
+
     def __init__(self, hub, url):
         self.hub = hub
 
@@ -1525,10 +1535,9 @@ class HTTPClient(object):
             except Closed:
                 break
             ch = self.responses.popleft()
-            ch.send(status)
 
             headers = self.http.recv_headers()
-            ch.send(headers)
+            ch.send(self.Response(status, headers, ch))
 
             # If our connection is upgraded, shutdown the HTTP receive loop, as
             # this is no longer a HTTP connection.
@@ -1591,14 +1600,13 @@ class HTTPClient(object):
             'Sec-WebSocket-Key': key,
             'Sec-WebSocket-Version': 13, })
 
-        response = self.request('GET', path, params, headers, version)
+        response = self.request('GET', path, params, headers, version).recv()
 
-        status = response.recv()
-        assert status.code == 101
+        assert response.status.code == 101
 
-        headers = response.recv()
-        assert headers['Upgrade'].lower() == 'websocket'
-        assert headers['Sec-WebSocket-Accept'] == WebSocket.accept_key(key)
+        assert response.headers['Upgrade'].lower() == 'websocket'
+        assert response.headers['Sec-WebSocket-Accept'] == \
+            WebSocket.accept_key(key)
 
         ws = WebSocket(self.http.fd)
         # TODO: the connection gets garbage collected unless we keep a
