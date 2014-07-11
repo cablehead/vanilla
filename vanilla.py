@@ -1622,6 +1622,14 @@ class HTTPListener(object):
         """
         manages the state of a HTTP Response
         """
+
+        class HTTPStatus(Exception):
+            pass
+
+        class HTTP404(HTTPStatus):
+            code = 404
+            message = 'Not Found'
+
         def __init__(self, request, http, chunks):
             self.request = request
             self.http = http
@@ -1649,15 +1657,18 @@ class HTTPListener(object):
                 "Connection": "Upgrade",
                 "Sec-WebSocket-Accept": accept, })
 
-            self.init()
+            self.init(close=False)
             self.is_upgraded = True
             self.chunks.close()
 
             return WebSocket(self.http.fd, is_client=False)
 
-        def init(self):
+        def init(self, close=True):
             assert not self.is_init
             self.is_init = True
+            if close:
+                # TODO: support HTTP Keep alive
+                self.headers['Connection'] = 'Close'
             self.http.send_response(*self.status)
             self.http.send_headers(self.headers)
 
@@ -1713,7 +1724,15 @@ class HTTPListener(object):
 
         @self.hub.spawn
         def _():
-            data = self.server(request, response)
+            try:
+                data = self.server(request, response)
+            except response.HTTPStatus, e:
+                response.status = (e.code, e.message)
+                data = e.message
+            except Exception, e:
+                # TODO: send 500
+                print "EXCEPTION", repr(e)
+                raise
             response.end(data)
 
         for chunk in response.chunks:
@@ -1824,9 +1843,13 @@ class HTTPCup(object):
 
         while True:
             data = fh.read(4096)
+            if not data:
+                break
             response.send(data)
             # give other coroutines a chance to run
             self.hub.sleep(1)
+
+        fh.close()
 
     def static(self, path, directory):
         self.routes.connect(

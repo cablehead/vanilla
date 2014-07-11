@@ -605,11 +605,16 @@ class TestCup(object):
     def test_static(self, tmpdir):
         h = vanilla.Hub()
         app = h.http.cup(base_path=tmpdir.strpath)
-        app.static('/static', '.')
+        app.static('/static', 'static')
 
-        tmpdir.join('foo.html').open('w').write('bar')
+        tmpdir.mkdir('static')
+        tmpdir.join('static', 'foo.html').open('w').write('bar')
 
         response = self.conn(app).get('/static/foo.html').recv()
         assert response.status.code == 200
         assert response.headers['Content-Type'] == 'text/html'
         assert response.consume() == 'bar'
+
+        # test 404
+        response = self.conn(app).get('/static/bar.html').recv()
+        assert response.status.code == 404
