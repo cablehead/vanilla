@@ -2,6 +2,7 @@
 
 import collections
 import functools
+import mimetypes
 import urlparse
 import hashlib
 import logging
@@ -1763,6 +1764,7 @@ class HTTPCup(object):
 
     def serve(self, request, response):
         path, query = urllib.splitquery(request.path)
+
         environ = {'REQUEST_METHOD': request.method}
         match = self.routes.match(path, environ=environ)
 
@@ -1771,7 +1773,7 @@ class HTTPCup(object):
             return 'Sorry chief, page not found.'
 
         f = match.pop('f')
-        return f(request, response)
+        return f(request, response, **match)
 
     def _add_route(self, path, method, f):
         def wrap(*a, **kw):
@@ -1791,10 +1793,35 @@ class HTTPCup(object):
         return functools.partial(self._add_route, path, None)
 
     def get(self, path):
-        return functools.partial(self._add_route, path, "GET")
+        return functools.partial(self._add_route, path, 'GET')
 
     def post(self, path):
-        return functools.partial(self._add_route, path, "POST")
+        return functools.partial(self._add_route, path, 'POST')
 
     def put(self, path):
-        return functools.partial(self._add_route, path, "PUT")
+        return functools.partial(self._add_route, path, 'PUT')
+
+    def _static(self, directory, request, response, filename):
+        typ_, encoding = mimetypes.guess_type(filename)
+        response.headers['Content-Type'] = typ_ or 'text/plain'
+        if encoding:
+            response.headers['Content-Encoding'] = encoding
+
+        # TODO: this isn't secure, use something like twisted.python.filepath
+        try:
+            fh = open('%s/%s' % (directory, filename))
+        except:
+            # TODO:
+            raise response.HTTP404
+
+        while True:
+            data = fh.read(4096)
+            response.send(data)
+            # give other coroutines a chance to run
+            self.hub.sleep(1)
+
+    def static(self, path, directory):
+        self.routes.connect(
+            '%s/{filename:.*?}' % path,
+            f=functools.partial(self._static, directory),
+            conditions={'method': ['GET']})

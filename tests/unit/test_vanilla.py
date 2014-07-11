@@ -601,3 +601,15 @@ class TestCup(object):
         response = conn.get('/').recv()
         assert response.status.code == 200
         assert response.consume() == 'GET'
+
+    def test_static(self, tmpdir):
+        h = vanilla.Hub()
+        app = h.http.cup()
+        app.static('/static', tmpdir.strpath)
+
+        tmpdir.join('foo.html').open('w').write('bar')
+
+        response = self.conn(app).get('/static/foo.html').recv()
+        assert response.status.code == 200
+        assert response.headers['Content-Type'] == 'text/html'
+        assert response.consume() == 'bar'
