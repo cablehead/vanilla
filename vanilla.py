@@ -1852,14 +1852,19 @@ class HTTPCup(object):
         self._add_route(path, {'function': match}, upgrade)
         return lambda f: setattr(upgrade, 'handler', f)
 
-    def _static(self, directory, request, response, filename):
+    def _static(self, target, request, response, filename=None):
+        if filename:
+            filename = self.path(target, filename)
+        else:
+            filename = self.path(target)
+
         typ_, encoding = mimetypes.guess_type(filename)
         response.headers['Content-Type'] = typ_ or 'text/plain'
         if encoding:
             response.headers['Content-Encoding'] = encoding
 
         try:
-            fh = open(self.path(directory, filename))
+            fh = open(filename)
         except:
             # TODO:
             raise response.HTTP404
@@ -1874,8 +1879,14 @@ class HTTPCup(object):
 
         fh.close()
 
-    def static(self, path, directory):
-        self.routes.connect(
-            '%s/{filename:.*?}' % path,
-            f=functools.partial(self._static, directory),
-            conditions={'method': ['GET']})
+    def static(self, path, target):
+        if os.path.isdir(self.path(target)):
+            self.routes.connect(
+                '%s/{filename:.*?}' % path,
+                f=functools.partial(self._static, target),
+                conditions={'method': ['GET']})
+        else:
+            self.routes.connect(
+                path,
+                f=functools.partial(self._static, target),
+                conditions={'method': ['GET']})

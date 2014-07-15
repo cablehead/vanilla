@@ -611,14 +611,24 @@ class TestCup(object):
         assert ws.recv() == 'toby'
 
     def test_static(self, tmpdir):
-        h = vanilla.Hub()
-        app = h.http.cup(base_path=tmpdir.strpath)
-        app.static('/static', 'static')
+        fh = tmpdir.join('bar.html').open('w')
+        fh.write('foo')
+        fh.close()
 
         tmpdir.mkdir('static')
         fh = tmpdir.join('static', 'foo.html').open('w')
         fh.write('bar')
         fh.close()
+
+        h = vanilla.Hub()
+        app = h.http.cup(base_path=tmpdir.strpath)
+        app.static('/', 'bar.html')
+        app.static('/static', 'static')
+
+        response = self.conn(app).get('/').recv()
+        assert response.status.code == 200
+        assert response.headers['Content-Type'] == 'text/html'
+        assert response.consume() == 'foo'
 
         response = self.conn(app).get('/static/foo.html').recv()
         assert response.status.code == 200
