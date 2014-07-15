@@ -609,7 +609,9 @@ class TestCup(object):
         app.static('/static', 'static')
 
         tmpdir.mkdir('static')
-        tmpdir.join('static', 'foo.html').open('w').write('bar')
+        fh = tmpdir.join('static', 'foo.html').open('w')
+        fh.write('bar')
+        fh.close()
 
         response = self.conn(app).get('/static/foo.html').recv()
         assert response.status.code == 200
