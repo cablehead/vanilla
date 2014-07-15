@@ -595,11 +595,20 @@ class TestCup(object):
         def index(request, response):
             return request.method
 
-        conn = self.conn(app)
+        @app.websocket('/websocket')
+        def websocket(ws):
+            while True:
+                ws.send(ws.recv())
 
+        conn = self.conn(app)
         response = conn.get('/').recv()
         assert response.status.code == 200
         assert response.consume() == 'GET'
+
+        conn = self.conn(app)
+        ws = conn.websocket('/websocket')
+        ws.send('toby')
+        assert ws.recv() == 'toby'
 
     def test_static(self, tmpdir):
         h = vanilla.Hub()

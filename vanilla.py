@@ -1803,7 +1803,10 @@ class HTTPCup(object):
     def serve(self, request, response):
         path, query = urllib.splitquery(request.path)
 
-        environ = {'REQUEST_METHOD': request.method}
+        if request.headers.get('upgrade', '').lower() == 'websocket':
+            environ = {'REQUEST_METHOD': 'WEBSOCKET'}
+        else:
+            environ = {'REQUEST_METHOD': request.method}
         match = self.routes.match(path, environ=environ)
 
         if not match:
@@ -1813,7 +1816,7 @@ class HTTPCup(object):
         f = match.pop('f')
         return f(request, response, **match)
 
-    def _add_route(self, path, method, f):
+    def _add_route(self, path, conditions, f):
         def wrap(*a, **kw):
             target = self.actions[f]
             return target(*a, **kw)
@@ -1821,8 +1824,8 @@ class HTTPCup(object):
         f.action = f
         self.actions[f] = f
 
-        if method:
-            self.routes.connect(path, f=wrap, conditions={'method': [method]})
+        if conditions:
+            self.routes.connect(path, f=wrap, conditions=conditions)
         else:
             self.routes.connect(path, f=wrap)
         return f
@@ -1831,13 +1834,23 @@ class HTTPCup(object):
         return functools.partial(self._add_route, path, None)
 
     def get(self, path):
-        return functools.partial(self._add_route, path, 'GET')
+        return functools.partial(self._add_route, path, {'method': ['GET']})
 
     def post(self, path):
-        return functools.partial(self._add_route, path, 'POST')
+        return functools.partial(self._add_route, path, {'method': ['POST']})
 
     def put(self, path):
-        return functools.partial(self._add_route, path, 'PUT')
+        return functools.partial(self._add_route, path, {'method': ['PUT']})
+
+    def websocket(self, path):
+        def match(environ, match_dict):
+            return environ.get('REQUEST_METHOD') == 'WEBSOCKET'
+
+        def upgrade(request, response):
+            upgrade.handler(response.upgrade())
+
+        self._add_route(path, {'function': match}, upgrade)
+        return lambda f: setattr(upgrade, 'handler', f)
 
     def _static(self, directory, request, response, filename):
         typ_, encoding = mimetypes.guess_type(filename)
