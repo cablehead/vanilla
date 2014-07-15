@@ -294,20 +294,18 @@ class TestProcess(object):
             import sys
             import vanilla
             h = vanilla.Hub()
+            h.stdout.send('ready\n')
             h.stop_on_term()
             sys.exit(11)
 
-        p = h.process.spawn(child)
+        p = h.process.spawn(child, stdout=True)
 
+        assert p.stdout.recv_line() == 'ready'
         assert p.check_liveness()
-
-        # need to give the child enough time to put it's signal trap in place
-        h.sleep(300)
         p.terminate()
         p.done.recv()
         assert p.exitcode == 11
         assert p.exitsignal == 0  # the sigterm was caught
-
         assert not p.check_liveness()
 
     def test_execv(self):
