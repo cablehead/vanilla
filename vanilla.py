@@ -244,59 +244,51 @@ class FD(object):
         return klass(hub, File(C.unblock(fileno)))
 
     def loop(self):
+
+        send_continue = self.hub.channel()
+
+        @self.hub.spawn
+        def send_loop():
+            for data in self.send_pending:
+                while True:
+                    try:
+                        n = self.conn.send(data)
+                    except (socket.error, OSError), e:
+                        if e.errno == 11:  # EAGAIN
+                            send_continue.recv()
+                            continue
+                        raise
+                    if n == len(data):
+                        break
+                    data = data[n:]
+
         try:
-            to_send = ''
-            while True:
-                if to_send:
-                    ch = self.events
-                    data = ch.recv()
-                else:
-                    ch, data = self.hub.select(self.events, self.send_pending)
+            for fileno, event in self.events:
 
-                if ch == self.events:
-                    fileno, event = data
+                if event & C.EPOLLERR or event & C.EPOLLHUP:
+                    raise Stop
 
-                    if event & C.EPOLLERR or event & C.EPOLLHUP:
-                        raise Stop
-
-                    elif event & C.EPOLLIN:
-                        while True:
-                            try:
-                                data = self.conn.recv(4096)
-                            except Exception, e:
-                                if e.errno == 11:  # EAGAIN
-                                    break
-                                raise
-
-                            if not data:
-                                raise Stop
-
-                            self.recv_pending.send(data)
-
-                    elif event & C.EPOLLOUT:
-                        while to_send:
-                            try:
-                                n = self.conn.send(to_send)
-                            except Exception, e:
-                                if e.errno == 11:  # EAGAIN
-                                    break
-                                raise
-                            to_send = to_send[n:]
-
-                elif ch == self.send_pending:
-                    to_send = data
-                    while to_send:
+                elif event & C.EPOLLIN:
+                    while True:
                         try:
-                            n = self.conn.send(to_send)
-                        except Exception, e:
+                            data = self.conn.recv(4096)
+                        except (socket.error, OSError), e:
                             if e.errno == 11:  # EAGAIN
                                 break
                             raise
-                        to_send = to_send[n:]
+
+                        if not data:
+                            raise Stop
+
+                        self.recv_pending.send(data)
+
+                elif event & C.EPOLLOUT:
+                    send_continue.send(True)
 
         except Closed:
-            self.close()
-            return
+            pass
+
+        self.close()
 
     def shutdown(self):
         if self.recv_pending.closed and self.send_pending.closed:
