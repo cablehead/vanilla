@@ -409,8 +409,9 @@ class TestFD(object):
         h = vanilla.Hub()
 
         pipe_r, pipe_w = os.pipe()
-        fd_r = vanilla.FD(h, pipe_r)
-        fd_w = vanilla.FD(h, pipe_w)
+
+        fd_r = vanilla.FD.from_fileno(h, pipe_r)
+        fd_w = vanilla.FD.from_fileno(h, pipe_w)
 
         fd_w.send('Toby')
         assert fd_r.recv_bytes(4) == 'Toby'
@@ -427,11 +428,11 @@ class TestFD(object):
 
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect(('127.0.0.1', port))
-        client_fd = vanilla.FD(h, client.fileno())
+        client_fd = vanilla.FD(h, client)
 
         conn, host = s.accept()
         conn.setblocking(0)
-        fd = vanilla.FD(h, conn.fileno())
+        fd = vanilla.FD(h, conn)
 
         def chunks(l, n):
             """

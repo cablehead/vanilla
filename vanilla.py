@@ -96,6 +96,7 @@ def init_C():
 
     #define EPOLLIN ...
     #define EPOLLOUT ...
+    #define EPOLLET ...
     #define EPOLLERR ...
     #define EPOLLHUP ...
     #define EPOLLRDHUP ...
@@ -204,93 +205,103 @@ def init_C():
 C = init_C()
 
 
+class File(object):
+    def __init__(self, no):
+        self.no = no
+
+    def fileno(self):
+        return self.no
+
+    def recv(self, n):
+        return os.read(self.no, n)
+
+    def send(self, data):
+        return os.write(self.no, data)
+
+    def close(self):
+        try:
+            os.close(self.no)
+        except OSError:
+            pass
+
+
 class FD(object):
-    def __init__(self, hub, fileno):
+    def __init__(self, hub, conn):
         self.hub = hub
-        self.fileno = C.unblock(fileno)
+        self.conn = conn
 
-        self.mask = C.EPOLLIN | C.EPOLLHUP | C.EPOLLERR
-        self.evts = hub.register(self.fileno, self.mask)
-
-        self.recv_ready = hub.event(False)
-        self.send_ready = hub.event(False)
+        self.mask = \
+            C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET
+        self.events = hub.register(self.conn.fileno(), self.mask)
 
         self.recv_pending = self.hub.channel()
         self.send_pending = self.hub.channel()
 
-        self.hub.spawn(self.evts_loop)
-        self.hub.spawn(self.recv_loop)
-        self.hub.spawn(self.send_loop)
+        self.hub.spawn(self.loop)
 
-    def evts_loop(self):
+    @classmethod
+    def from_fileno(klass, hub, fileno):
+        return klass(hub, File(C.unblock(fileno)))
+
+    def loop(self):
         try:
+            to_send = ''
             while True:
-                fileno, event = self.evts.recv()
-                if event & C.EPOLLERR or event & C.EPOLLHUP:
-                    raise Stop
-                elif event & C.EPOLLIN:
-                    self.recv_ready.set()
-                elif event & C.EPOLLOUT:
-                    self.send_ready.set()
+                if to_send:
+                    ch = self.events
+                    data = ch.recv()
+                else:
+                    ch, data = self.hub.select(self.events, self.send_pending)
+
+                if ch == self.events:
+                    fileno, event = data
+
+                    if event & C.EPOLLERR or event & C.EPOLLHUP:
+                        raise Stop
+
+                    elif event & C.EPOLLIN:
+                        while True:
+                            try:
+                                data = self.conn.recv(4096)
+                            except Exception, e:
+                                if e.errno == 11:  # EAGAIN
+                                    break
+                                raise
+
+                            if not data:
+                                raise Stop
+
+                            self.recv_pending.send(data)
+
+                    elif event & C.EPOLLOUT:
+                        while to_send:
+                            try:
+                                n = self.conn.send(to_send)
+                            except Exception, e:
+                                if e.errno == 11:  # EAGAIN
+                                    break
+                                raise
+                            to_send = to_send[n:]
+
+                elif ch == self.send_pending:
+                    to_send = data
+                    while to_send:
+                        try:
+                            n = self.conn.send(to_send)
+                        except Exception, e:
+                            if e.errno == 11:  # EAGAIN
+                                break
+                            raise
+                        to_send = to_send[n:]
+
         except Closed:
             self.close()
             return
 
-    def recv_loop(self):
-        try:
-
-            while True:
-                try:
-                    data = os.read(self.fileno, 4096)
-                except OSError, e:
-                    # resource unavailable, block until it is
-                    if e.errno == 11:  # EAGAIN
-                        self.recv_ready.clear().wait()
-                        continue
-                    raise Stop
-
-                if not data:
-                    raise Stop
-
-                self.recv_pending.send(data)
-
-        except Closed:
-            self.recv_pending.close()
-            self.shutdown()
-            return
-
-    def send_loop(self):
-        try:
-            while True:
-                data = self.send_pending.recv()
-                while True:
-                    try:
-                        n = os.write(self.fileno, data)
-                    except OSError, e:
-                        # resource unavailable, block until it is
-                        if e.errno == 11:  # EAGAIN
-                            self.mask |= C.EPOLLOUT
-                            self.hub.epoll.modify(self.fileno, self.mask)
-                            self.send_ready.clear().wait()
-                            self.mask ^= C.EPOLLOUT
-                            self.hub.epoll.modify(self.fileno, self.mask)
-                            continue
-                        raise Stop
-                    if n == len(data):
-                        break
-                    data = data[n:]
-        except Closed:
-            self.send_pending.close()
-            self.shutdown()
-            return
-
     def shutdown(self):
         if self.recv_pending.closed and self.send_pending.closed:
-            self.hub.unregister(self.fileno)
-            try:
-                os.close(self.fileno)
-            except:
-                pass
+            self.hub.unregister(self.conn.fileno())
+            self.conn.close()
 
     def close(self):
         self.recv_pending.close()
@@ -614,7 +625,7 @@ class INotify(object):
     def __init__(self, hub):
         self.hub = hub
         self.fileno = C.inotify_init1(C.IN_NONBLOCK | C.IN_CLOEXEC)
-        self.fd = FD(self.hub, self.fileno)
+        self.fd = FD.from_fileno(self.hub, self.fileno)
         self.wds = {}
         for name in dir(C):
             if name.startswith('IN_'):
@@ -757,11 +768,11 @@ class Process(object):
 
         if is_stdin:
             os.close(inpipe_r)
-            child.stdin = FD(self.hub, C.unblock(inpipe_w))
+            child.stdin = FD.from_fileno(self.hub, inpipe_w)
 
         if is_stdout:
             os.close(outpipe_w)
-            child.stdout = FD(self.hub, C.unblock(outpipe_r))
+            child.stdout = FD.from_fileno(self.hub, outpipe_r)
 
         self.children.append(child)
         return child
@@ -801,11 +812,11 @@ class Hub(object):
 
     @lazy
     def stdin(self):
-        return FD(self, sys.stdin.fileno())
+        return FD.from_fileno(self, sys.stdin.fileno())
 
     @lazy
     def stdout(self):
-        return FD(self, sys.stdout.fileno())
+        return FD.from_fileno(self, sys.stdout.fileno())
 
     def event(self, fired=False):
         return Event(self, fired)
@@ -1517,7 +1528,7 @@ class HTTPClient(object):
         self.conn.connect((host, port))
         self.conn.setblocking(0)
 
-        self.http = HTTPSocket(FD(hub, self.conn.fileno()))
+        self.http = HTTPSocket(FD(hub, self.conn))
 
         self.agent = 'vanilla/%s' % __version__
 
@@ -1715,45 +1726,52 @@ class HTTPListener(object):
                 return
 
     def serve(self, conn):
-        conn.setblocking(0)
-        http = HTTPSocket(FD(self.hub, conn.fileno()))
+        try:
+            start = time.time()
+            conn.setblocking(0)
+            http = HTTPSocket(FD(self.hub, conn))
 
-        # TODO: support http keep alives
-        request = http.recv_request()
-        response = self.Response(request, http, self.hub.channel())
+            # TODO: support http keep alives
+            request = http.recv_request()
+            response = self.Response(request, http, self.hub.channel())
 
-        @self.hub.spawn
-        def _():
-            try:
-                data = self.server(request, response)
-            except response.HTTPStatus, e:
-                response.status = (e.code, e.message)
-                data = e.message
-            except Exception, e:
-                # TODO: send 500
-                print "EXCEPTION", repr(e)
-                raise
-            response.end(data)
+            @self.hub.spawn
+            def _():
+                try:
+                    data = self.server(request, response)
+                except response.HTTPStatus, e:
+                    response.status = (e.code, e.message)
+                    data = e.message
+                except Exception, e:
+                    # TODO: send 500
+                    print "EXCEPTION", repr(e)
+                    raise
+                response.end(data)
 
-        for chunk in response.chunks:
-            response.send_chunk(chunk)
+            for chunk in response.chunks:
+                response.send_chunk(chunk)
 
-        if response.is_upgraded:
-            # connection was upgraded, bail, as this is no longer a HTTP
-            # connection
-            return
+            if response.is_upgraded:
+                # connection was upgraded, bail, as this is no longer a HTTP
+                # connection
+                return
 
-        if response.is_init:
-            # this must be a chunked transfer
-            if response.data:
-                http.send_chunk(response.data)
-            http.send_chunk('')
+            if response.is_init:
+                # this must be a chunked transfer
+                if response.data:
+                    http.send_chunk(response.data)
+                http.send_chunk('')
 
-        else:
-            response.send_body(response.data)
+            else:
+                response.send_body(response.data)
 
-        # TODO: work through cleanup
-        # http.close()
+            took = int((time.time() - start) * 1000)
+            print request.method, request.path, response.status, took
+
+        except:
+            print "Unexpected failure:", conn.fileno()
+            import traceback
+            traceback.print_exc()
 
     def stop(self):
         self.hub.unregister(self.sock.fileno())
@@ -1842,12 +1860,12 @@ class HTTPCup(object):
             raise response.HTTP404
 
         while True:
-            data = fh.read(4096)
+            data = fh.read(16*1024)
             if not data:
                 break
             response.send(data)
             # give other coroutines a chance to run
-            self.hub.sleep(1)
+            self.hub.sleep(0)
 
         fh.close()
 
