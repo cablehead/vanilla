@@ -14,6 +14,8 @@ and they had a baby, it might look like Vanilla.*
     'Hello World'
 ```
 
+[![Build Status](https://travis-ci.org/cablehead/vanilla.svg?branch=master)](https://travis-ci.org/cablehead/vanilla)
+
 ## Overview
 
 Vanilla is a fast, concurrent, micro server-library. It's designed to be used
