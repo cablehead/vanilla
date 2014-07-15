@@ -591,22 +591,22 @@ class TestCup(object):
         h = vanilla.Hub()
         app = h.http.cup()
 
-        @app.route('/')
-        def index(request, response):
+        @app.get('/common')
+        def get(request, response):
             return request.method
 
-        @app.websocket('/websocket')
+        @app.websocket('/common')
         def websocket(ws):
             while True:
                 ws.send(ws.recv())
 
         conn = self.conn(app)
-        response = conn.get('/').recv()
+        response = conn.get('/common').recv()
         assert response.status.code == 200
         assert response.consume() == 'GET'
 
         conn = self.conn(app)
-        ws = conn.websocket('/websocket')
+        ws = conn.websocket('/common')
         ws.send('toby')
         assert ws.recv() == 'toby'
 
