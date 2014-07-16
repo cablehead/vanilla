@@ -52,11 +52,11 @@ def index(ws):
         except vanilla.Closed:
             watch.close()
 
-    try:
-        for count in watch:
+    for count in watch:
+        try:
             ws.send(str(count))
-    except vanilla.Closed:
-        pass
+        except vanilla.Closed:
+            pass
 
     connected.unsubscribe(watch)
 
