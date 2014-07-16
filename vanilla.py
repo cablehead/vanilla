@@ -1485,7 +1485,10 @@ class WebSocket(object):
 
     def recv_loop(self):
         while True:
-            self.__channel__.send(self._recv())
+            try:
+                self.__channel__.send(self._recv())
+            except Closed:
+                self.__channel__.close()
 
     def _recv(self):
         b1, length, = struct.unpack('!BB', self.fd.recv_bytes(2))

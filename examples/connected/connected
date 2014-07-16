@@ -43,22 +43,15 @@ connected = Connected(h)
 @app.websocket('/')
 def index(ws):
     watch = connected.subscribe()
-
-    @h.spawn
-    def _():
+    while True:
         try:
-            while True:
-                ws.recv()
-        except vanilla.Closed:
-            watch.close()
-
-    for count in watch:
-        try:
-            ws.send(str(count))
+            ch, item = h.select(ws, watch)
+            if ch == watch:
+                ws.send(str(item))
         except vanilla.Closed:
             break
-
     connected.unsubscribe(watch)
+
 
 h.stop_on_term()
 print 'peace.'
