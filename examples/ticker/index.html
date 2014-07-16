@@ -1,0 +1,79 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>Vanilla: Ticker</title>
+  <link href='http://fonts.googleapis.com/css?family=Roboto'
+		rel='stylesheet' type='text/css'>
+
+	<style>
+    html,body {
+      background: #cecece;
+      font-family: 'Roboto', sans-serif;
+      margin:0px;
+      height: 100%;
+    }
+    .card {
+      padding:20px;
+			font-size: 12pt;
+			color: #4e4e4e;
+      background: #efefef;
+    }
+		.card .symbol {
+			width: 50px;
+			display: inline-block;
+		}
+		.card .quote {
+			width: 90px;
+			display: inline-block;
+			font-size: 16pt;
+		}
+		.card .when {
+			font-size: 8pt;
+			color: #aeaeae;
+		}
+		.card .up {
+			color: #2dbd2d;
+		}
+    .shadow {
+      -moz-box-shadow: 0 0 5px #888;
+      -webkit-box-shadow: 0 0 5px#888;
+      box-shadow: 0 0 5px #888;
+    }
+	</style>
+</head>
+
+<body>
+  <div class='card shadow' id='container'></div>
+  <script id='template' type='text/ractive'>
+		<div>
+			<span class='symbol'>{{symbol}}</span>
+			<span class='quote'>{{quote}}</span>
+			<span class='{{ up ? "up" : "down" }}'>
+				{{change}} {{percent}}
+			</span>
+		</div>
+		<div class='when'>
+			{{when}}
+		</div>
+  </script>
+
+  <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
+
+  <script>
+    var ractive = new Ractive({
+      el: 'container',
+      template: '#template',
+      data: {}
+    });
+
+		var uri = 'ws://' + document.domain;
+		if (location.port) uri += ':' + location.port;
+		var ws = new WebSocket(uri);
+
+		ws.onmessage = function(e) {
+				ractive.set(JSON.parse(e.data));
+		};
+  </script>
+</body>
+</html>

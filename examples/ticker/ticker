@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+import json
+import os
+
+from bs4 import BeautifulSoup
+
+import vanilla
+
+
+class Feed(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.connected = []
+        self.last = {}
+        hub.spawn(self.collect)
+
+    def collect(self):
+        # make use of a keep-alive connection
+        conn = h.http.connect('http://www.nasdaq.com/')
+
+        USER_AGENT = 'Mozilla/5.0 (Windows NT 6.3; ' \
+                     'Win64; x64) AppleWebKit/537.36 ' \
+                     '(KHTML, like Gecko) Chrome/37.0.2049.0 Safari/537.36'
+        headers = {'User-Agent': USER_AGENT}
+
+        symbol = 'aapl'
+
+        while True:
+            try:
+                response = conn.get(
+                    '/symbol/%s/real-time' % symbol, headers=headers).recv()
+                body = response.consume()
+                body = BeautifulSoup(body)
+                _id = lambda s: body.find(id=s)
+                self.last = {
+                    'symbol': symbol.upper(),
+                    'quote': _id('qwidget_lastsale').string,
+                    'change': _id('qwidget_netchange').string,
+                    'percent': _id('qwidget_percent').string,
+                    'when': _id('qwidget_markettimedate').find('span').string,
+                    'up':
+                        'arrow-green' in
+                        _id('qwidget-arrow').find('div')['class'], }
+                print self.last['symbol'], self.last['quote']
+                self.broadcast(self.last)
+                h.sleep(1000)
+            except vanilla.Closed:
+                break
+
+    def broadcast(self, data):
+        for ch in self.connected:
+            ch.send(data)
+
+    def subscribe(self):
+        ch = self.hub.channel()
+        ch.send(self.last)
+        self.connected.append(ch)
+        return ch
+
+    def unsubscribe(self, ch):
+        self.connected.remove(ch)
+
+
+print 'start'
+h = vanilla.Hub()
+app = h.http.cup(
+    host='0.0.0.0',
+    port=8000,
+    base_path=os.path.join(os.path.dirname(__file__)))
+
+app.static('/', 'index.html')
+
+feed = Feed(h)
+
+
+@app.websocket('/')
+def index(ws):
+    watch = feed.subscribe()
+    while True:
+        try:
+            ch, data = h.select(ws, watch)
+            if ch == watch:
+                ws.send(json.dumps(data))
+        except vanilla.Closed:
+            break
+    feed.unsubscribe(watch)
+
+
+h.stop_on_term()
+print 'peace.'
