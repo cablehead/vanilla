@@ -56,7 +56,7 @@ def index(ws):
         try:
             ws.send(str(count))
         except vanilla.Closed:
-            pass
+            break
 
     connected.unsubscribe(watch)
 
