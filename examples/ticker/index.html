@@ -3,6 +3,12 @@
 <head>
   <meta charset='utf-8'>
   <title>Vanilla: Ticker</title>
+
+  <meta name="viewport" content="width=device-width,
+    minimum-scale=1.0, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
   <link href='http://fonts.googleapis.com/css?family=Roboto'
 		rel='stylesheet' type='text/css'>
 
@@ -35,6 +41,9 @@
 		.card .up {
 			color: #2dbd2d;
 		}
+		.card .down {
+			color: #bd2d2d;
+		}
     .shadow {
       -moz-box-shadow: 0 0 5px #888;
       -webkit-box-shadow: 0 0 5px#888;
@@ -61,6 +70,10 @@
   <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
 
   <script>
+		document.addEventListener("touchmove", function(event){
+			event.preventDefault();
+		});
+
     var ractive = new Ractive({
       el: 'container',
       template: '#template',
