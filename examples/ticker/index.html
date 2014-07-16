@@ -10,102 +10,141 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <link href='http://fonts.googleapis.com/css?family=Roboto'
-		rel='stylesheet' type='text/css'>
+    rel='stylesheet' type='text/css'>
 
-	<style>
+  <style>
     html,body {
       background: #cecece;
       font-family: 'Roboto', sans-serif;
       margin:0px;
       height: 100%;
     }
+    #status {
+      padding:10px;
+      font-size: 8pt;
+      color: #bebebe;
+      background: #4D658D;
+    }
     .card {
       padding:20px;
-			font-size: 12pt;
-			color: #4e4e4e;
+      font-size: 12pt;
+      color: #4e4e4e;
       background: #efefef;
     }
-		.card .symbol {
-			width: 50px;
-			display: inline-block;
-		}
-		.card .quote {
-			width: 90px;
-			display: inline-block;
-			font-size: 16pt;
-		}
-		.card .when {
-			font-size: 8pt;
-			color: #aeaeae;
-		}
-		.card .up {
-			width: 40px;
-			display: inline-block;
-			color: #2dbd2d;
-		}
-		.card .down {
-			width: 40px;
-			display: inline-block;
-			color: #bd2d2d;
-		}
+    .card .symbol {
+      width: 50px;
+      display: inline-block;
+    }
+    .card .quote {
+      width: 90px;
+      display: inline-block;
+      font-size: 16pt;
+    }
+    .card .when {
+      font-size: 8pt;
+      color: #aeaeae;
+    }
+    .green {
+      color: #2dad2d;
+    }
+    .red {
+      color: #bd2d2d;
+    }
+    .card .stat {
+      width: 40px;
+      display: inline-block;
+    }
     .shadow {
       -moz-box-shadow: 0 0 5px #888;
       -webkit-box-shadow: 0 0 5px#888;
       box-shadow: 0 0 5px #888;
     }
-	</style>
+  </style>
 </head>
 
 <body>
-  <div class='card shadow' id='container'></div>
-  <script id='template' type='text/ractive'>
-		<div>
-			<span class='symbol'>{{symbol}}</span>
-			<span class='quote'>{{quote}}</span>
-			<span class='{{ up ? "up" : "down" }}'>
-				{{change}}
-			</span>
-			<span class='{{ up ? "up" : "down" }}'>
-				{{percent}}
-			</span>
-		</div>
-		<div class='when'>
-			{{when}}
-		</div>
+  <div id='status'></div>
+  <script id='template-status' type='text/ractive'>
+    <div style="margin-right:10px;float:right">
+      {{format(last)}}
+    </div>
+    <div class='{{status == "OK" ? "green" : ""}}'>{{status}}</div>
+  </script>
+
+  <div class='card shadow' id='quote'></div>
+  <script id='template-quote' type='text/ractive'>
+    <div>
+      <span class='symbol'>{{symbol}}</span>
+      <span class='quote'>{{quote}}</span>
+      <span class='stat {{ up ? "green" : "red" }}'>
+        {{change}}
+      </span>
+      <span class='stat {{ up ? "green" : "red" }}'>
+        {{percent}}
+      </span>
+    </div>
+    <div class='when'>
+      {{when}}
+    </div>
   </script>
 
   <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
 
   <script>
-		document.addEventListener("touchmove", function(event){
-			event.preventDefault();
-		});
+    document.addEventListener("touchmove", function(event){
+      event.preventDefault();
+    });
+
+    var rstatus = new Ractive({
+      el: 'status',
+      template: '#template-status',
+      data: {
+        status: '...',
+        last: 0,
+        format: function(last) {
+          switch(last) {
+            case 0:
+              return 'now';
+            case 1:
+              return '1 sec ago';
+            default:
+              return last + ' secs ago';
+          }
+        },
+      },
+    });
 
     var ractive = new Ractive({
-      el: 'container',
-      template: '#template',
+      el: 'quote',
+      template: '#template-quote',
       data: {}
     });
 
-		/* manage connection with the server */
-		function reconnect() {
-			console.log('reconnect...');
+    /* manage connection with the server */
+    function reconnect() {
+      rstatus.set('status', 'reconnect...');
 
-			var uri = 'ws://' + document.domain;
-			if (location.port) uri += ':' + location.port;
-			var ws = new WebSocket(uri);
+      var uri = 'ws://' + document.domain;
+      if (location.port) uri += ':' + location.port;
+      var ws = new WebSocket(uri);
 
-			ws.onopen = function() {
-				console.log('connected.')
-			}
-			ws.onmessage = function(e) {
-					ractive.set(JSON.parse(e.data));
-			};
-			ws.onclose = function() {
-				setTimeout(reconnect, 1000);
-			}
-		}
-		reconnect();
+      ws.onopen = function() {
+        rstatus.set('status', 'OK');
+      }
+      ws.onmessage = function(e) {
+          ractive.set(JSON.parse(e.data));
+          rstatus.set('last', 0);
+      };
+      ws.onclose = function() {
+        setTimeout(reconnect, 1000);
+      }
+    }
+    reconnect();
+
+    /* update status for when we last heard from the server */
+    setInterval( function () {
+      rstatus.add('last', 1);
+    }, 1000);
   </script>
 </body>
 </html>
