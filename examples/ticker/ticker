@@ -36,6 +36,7 @@ class Feed(object):
                 body = response.consume()
                 body = BeautifulSoup(body)
                 _id = lambda s: body.find(id=s)
+
                 self.last = {
                     'symbol': symbol.upper(),
                     'quote': _id('qwidget_lastsale').string,
@@ -45,9 +46,15 @@ class Feed(object):
                     'up':
                         'arrow-green' in
                         _id('qwidget-arrow').find('div')['class'], }
+
+                if len(self.last['when']) < 11:
+                    self.last['when'] += ' - market closed'
+
                 print self.last['symbol'], self.last['quote']
                 self.broadcast(self.last)
+
                 h.sleep(1000)
+
             except vanilla.Closed:
                 break
 

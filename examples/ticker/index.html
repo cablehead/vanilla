@@ -39,9 +39,13 @@
 			color: #aeaeae;
 		}
 		.card .up {
+			width: 40px;
+			display: inline-block;
 			color: #2dbd2d;
 		}
 		.card .down {
+			width: 40px;
+			display: inline-block;
 			color: #bd2d2d;
 		}
     .shadow {
@@ -59,7 +63,10 @@
 			<span class='symbol'>{{symbol}}</span>
 			<span class='quote'>{{quote}}</span>
 			<span class='{{ up ? "up" : "down" }}'>
-				{{change}} {{percent}}
+				{{change}}
+			</span>
+			<span class='{{ up ? "up" : "down" }}'>
+				{{percent}}
 			</span>
 		</div>
 		<div class='when'>
