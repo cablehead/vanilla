@@ -818,6 +818,10 @@ class Hub(object):
 
     # allows you to wait on a list of channels
     def select(self, *channels, **kw):
+        # TODO: this needs rethinking
+        mapper = dict((getattr(ch, '__channel__', ch), ch) for ch in channels)
+        channels = mapper.keys()
+
         timeout = kw.pop('timeout', -1)
         for ch in channels:
             try:
@@ -843,7 +847,7 @@ class Hub(object):
         for ch in channels:
             if ch != fired:
                 ch.waiters.remove(getcurrent())
-        return fired, item
+        return mapper[fired], item
 
     def inotify(self):
         return INotify(self)
@@ -1429,6 +1433,13 @@ class WebSocket(object):
         self.fd = fd
         self.is_client = is_client
 
+        # TODO: clean up
+        # expose the internals of the channel api, so it's possible to call
+        # select on a websocket
+        self.__channel__ = fd.hub.channel()
+        self.recv = self.__channel__.recv
+        fd.hub.spawn(self.recv_loop)
+
     @staticmethod
     def mask(mask, s):
         mask_bytes = [ord(c) for c in mask]
@@ -1472,7 +1483,11 @@ class WebSocket(object):
         else:
             self.fd.send(header + data)
 
-    def recv(self):
+    def recv_loop(self):
+        while True:
+            self.__channel__.send(self._recv())
+
+    def _recv(self):
         b1, length, = struct.unpack('!BB', self.fd.recv_bytes(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 

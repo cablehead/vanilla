@@ -548,6 +548,11 @@ class TestHTTP(object):
         ws.send(message)
         assert ws.recv() == message
 
+        # test we can call select on the websocket
+        message = 'x' * 125
+        ws.send(message)
+        assert h.select(ws) == (ws, message)
+
 
 class TestReactive(object):
     """
