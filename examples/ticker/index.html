@@ -87,13 +87,25 @@
       data: {}
     });
 
-		var uri = 'ws://' + document.domain;
-		if (location.port) uri += ':' + location.port;
-		var ws = new WebSocket(uri);
+		/* manage connection with the server */
+		function reconnect() {
+			console.log('reconnect...');
 
-		ws.onmessage = function(e) {
-				ractive.set(JSON.parse(e.data));
-		};
+			var uri = 'ws://' + document.domain;
+			if (location.port) uri += ':' + location.port;
+			var ws = new WebSocket(uri);
+
+			ws.onopen = function() {
+				console.log('connected.')
+			}
+			ws.onmessage = function(e) {
+					ractive.set(JSON.parse(e.data));
+			};
+			ws.onclose = function() {
+				setTimeout(reconnect, 1000);
+			}
+		}
+		reconnect();
   </script>
 </body>
 </html>
