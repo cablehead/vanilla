@@ -103,6 +103,7 @@
         status: '...',
         last: 0,
         format: function(last) {
+          if (last < 5) return '';
           switch(last) {
             case 0:
               return 'now';
