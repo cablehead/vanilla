@@ -349,19 +349,19 @@ def test_Scheduler():
     s.add(3, 'f1')
     item3 = s.add(7, 'f3')
 
-    assert 0.003 - s.timeout() < 0.0002
+    assert 0.003 - s.timeout() < 0.0003
     assert len(s) == 4
 
     s.remove(item3)
-    assert 0.003 - s.timeout() < 0.0002
+    assert 0.003 - s.timeout() < 0.0003
     assert len(s) == 3
 
     assert s.pop() == ('f1', ())
-    assert 0.004 - s.timeout() < 0.0002
+    assert 0.004 - s.timeout() < 0.0003
     assert len(s) == 2
 
     assert s.pop() == ('f2', ())
-    assert 0.009 - s.timeout() < 0.0002
+    assert 0.009 - s.timeout() < 0.0003
     assert len(s) == 1
 
     assert s.pop() == ('f4', ())
