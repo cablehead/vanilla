@@ -1,0 +1,57 @@
+﻿<!doctype html>
+<html>
+<head>
+  <title>Ticker</title>
+  <meta name="viewport" content="width=device-width,
+    minimum-scale=1.0, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link href='http://fonts.googleapis.com/css?family=Roboto'
+    rel='stylesheet' type='text/css'>
+  <style>
+    html,body {
+      background: #cecece;
+      font-family: 'Roboto', sans-serif;
+      margin:0px;
+      height: 100%;
+    }
+    h3 {
+     font-size: 24pt;
+     color: #4e4e4e;
+    }
+    h3 span {
+      margin-left:30px;
+    }
+    .shadow {
+      -moz-box-shadow: 0 0 5px #888;
+      -webkit-box-shadow: 0 0 5px#888;
+      box-shadow: 0 0 5px #888;
+    }
+    .card {
+      margin:10px;
+      padding:20px;
+      background: #efefef;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card shadow">
+    <h3>Connected: <span id="connected">.</span></h3>
+  </div>
+
+  <script>
+      document.addEventListener("touchmove", function(event){
+        event.preventDefault();
+      });
+
+      var uri = 'ws://' + document.domain;
+      if (location.port) uri += ':' + location.port;
+      var ws = new WebSocket(uri);
+      ws.onmessage = function(e) {
+          console.log('onmessage', e.data);
+          document.getElementById('connected').innerHTML = e.data;
+      };
+  </script>
+</body>
+</html>
