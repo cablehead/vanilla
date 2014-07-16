@@ -63,14 +63,6 @@
 </head>
 
 <body>
-  <div id='status'></div>
-  <script id='template-status' type='text/ractive'>
-    <div style="margin-right:10px;float:right">
-      {{format(last)}}
-    </div>
-    <div class='{{status == "OK" ? "green" : ""}}'>{{status}}</div>
-  </script>
-
   <div class='card shadow' id='quote'></div>
   <script id='template-quote' type='text/ractive'>
     <div>
@@ -87,6 +79,15 @@
       {{when}}
     </div>
   </script>
+
+  <div id='status'></div>
+  <script id='template-status' type='text/ractive'>
+    <div style="margin-right:10px;float:right">
+      {{format(last)}}
+    </div>
+    <div class='{{status == "OK" ? "green" : ""}}'>{{status}}</div>
+  </script>
+
 
   <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
 
