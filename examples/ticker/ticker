@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
-
 import json
+import sys
 import os
 
 from bs4 import BeautifulSoup
@@ -11,91 +10,152 @@ from bs4 import BeautifulSoup
 import vanilla
 
 
-class Feed(object):
-    def __init__(self, hub):
+class Collector(object):
+    def __init__(self, hub, conn, symbol):
         self.hub = hub
-        self.connected = []
-        self.last = {}
+        self.conn = conn
+        self.symbol = symbol
+        self.output = hub.channel()
+
+        # put the 1 second sleep on a seperate green thread, so we can shut
+        # down the collect loop immediately with trigger.close()
+        self.trigger = hub.channel()
+
+        @hub.spawn
+        def _():
+            try:
+                while True:
+                    self.trigger.send(True)
+                    self.hub.sleep(1000)
+            except vanilla.Closed:
+                pass
         hub.spawn(self.collect)
 
-    def collect(self):
-        # make use of a keep-alive connection
-        conn = h.http.connect('http://www.nasdaq.com/')
+    def subscribe(self, ch):
+        self.listeners.append(ch)
 
+    def unsubscribe(self, ch):
+        self.listeners.remove(ch)
+        if not self.listeners:
+            # no one is listener, stop polling for this symbol
+            self.trigger.close()
+
+    def collect(self):
         USER_AGENT = 'Mozilla/5.0 (Windows NT 6.3; ' \
                      'Win64; x64) AppleWebKit/537.36 ' \
                      '(KHTML, like Gecko) Chrome/37.0.2049.0 Safari/537.36'
+
         headers = {'User-Agent': USER_AGENT}
 
-        symbol = 'aapl'
+        for _ in self.trigger:
+            response = self.conn.get(
+                '/symbol/%s/real-time' % self.symbol.lower(),
+                headers=headers).recv()
 
-        while True:
-            try:
-                response = conn.get(
-                    '/symbol/%s/real-time' % symbol, headers=headers).recv()
-                body = response.consume()
-                body = BeautifulSoup(body)
-                _id = lambda s: body.find(id=s)
+            body = response.consume()
+            body = BeautifulSoup(body)
 
-                self.last = {
-                    'symbol': symbol.upper(),
-                    'quote': _id('qwidget_lastsale').string,
-                    'change': _id('qwidget_netchange').string,
-                    'percent': _id('qwidget_percent').string,
-                    'when': _id('qwidget_markettimedate').find('span').string,
-                    'up':
-                        'arrow-green' in
-                        _id('qwidget-arrow').find('div')['class'], }
+            _id = lambda s: body.find(id=s)
 
-                if len(self.last['when']) < 11:
-                    self.last['when'] += ' - market closed'
+            data = {
+                'symbol': self.symbol.upper(),
+                'quote': _id('qwidget_lastsale').string,
+                'change': _id('qwidget_netchange').string,
+                'percent': _id('qwidget_percent').string,
+                'when': _id('qwidget_markettimedate').find('span').string,
+                'up':
+                    'arrow-green' in
+                    _id('qwidget-arrow').find('div')['class'], }
 
-                print self.last['symbol'], self.last['quote']
-                self.broadcast(self.last)
+            if len(data['when']) < 11:
+                data['when'] += ' - market closed'
 
-                h.sleep(1000)
+            print data['symbol'], data['quote']
+            self.output.send(data)
 
-            except vanilla.Closed:
-                break
 
-    def broadcast(self, data):
-        for ch in self.connected:
-            ch.send(data)
+class Feed(object):
+    def __init__(self, hub):
+        self.hub = hub
 
-    def subscribe(self):
+        # share a common keep-alive connection for all collectors
+        self.conn = self.hub.http.connect('http://www.nasdaq.com/')
+
+        self.connections = {}
+        self.collectors = {}
+
+    def connect(self):
         ch = self.hub.channel()
-        ch.send(self.last)
-        self.connected.append(ch)
+        self.connections[ch] = []
+        # every starts with AAPl in their feed
+        self.subscribe(ch, 'AAPL')
         return ch
 
-    def unsubscribe(self, ch):
-        self.connected.remove(ch)
+    def disconnect(self, ch):
+        for symbol in self.connections[ch]:
+            self.unsubscribe(ch, symbol)
+        del self.connections[ch]
+
+    def subscribe(self, ch, symbol):
+        self.connections[ch].append(symbol)
+
+        if symbol not in self.collectors:
+            print "BOOTING", symbol
+            # there's not a collector for this symbol yet, so let's boot one
+            collector = Collector(self.hub, self.conn, symbol)
+            listeners = [ch]
+            self.collectors[symbol] = (collector, listeners)
+
+            # route the collectors output to it's listeners
+            @self.hub.spawn
+            def _():
+                for data in collector.output:
+                    for listener in listeners:
+                        listener.send(data)
+        else:
+            collector, listeners = self.collectors[symbol]
+            listeners.append(ch)
+
+    def unsubscribe(self, ch, symbol):
+        collector, listeners = self.collectors[symbol]
+        listeners.remove(ch)
+        if not listeners:
+            # noone is interested in the collector, let's shut it down
+            print "STOPPING", symbol
+            collector.trigger.close()
+            del self.collectors[symbol]
 
 
-print 'start'
-h = vanilla.Hub()
-app = h.http.cup(
-    host='0.0.0.0',
-    port=8000,
-    base_path=os.path.join(os.path.dirname(__file__)))
+def main():
+    logging.basicConfig(level=logging.DEBUG)
 
-app.static('/', 'index.html')
+    print 'start'
+    h = vanilla.Hub()
 
-feed = Feed(h)
+    feed = Feed(h)
+
+    app = h.http.cup(
+        host='0.0.0.0',
+        port=8000,
+        base_path=os.path.join(os.path.dirname(__file__)))
+
+    app.static('/', 'index.html')
+
+    @app.websocket('/')
+    def index(ws):
+        watch = feed.connect()
+        while True:
+            try:
+                ch, data = h.select(ws, watch)
+                if ch == watch:
+                    ws.send(json.dumps(data))
+            except vanilla.Closed:
+                break
+        feed.disconnect(watch)
+
+    h.stop_on_term()
+    print 'peace.'
 
 
-@app.websocket('/')
-def index(ws):
-    watch = feed.subscribe()
-    while True:
-        try:
-            ch, data = h.select(ws, watch)
-            if ch == watch:
-                ws.send(json.dumps(data))
-        except vanilla.Closed:
-            break
-    feed.unsubscribe(watch)
-
-
-h.stop_on_term()
-print 'peace.'
+if __name__ == '__main__':
+    sys.exit(main())
