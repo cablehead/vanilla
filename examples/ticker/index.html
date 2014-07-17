@@ -210,26 +210,35 @@
       },
     });
 
-    /* manage connection with the server */
-    function reconnect() {
-      rstatus.set('status', 'reconnect...');
+    var ws = (function() {
+      var conn;
 
-      var uri = 'ws://' + document.domain;
-      if (location.port) uri += ':' + location.port;
-      var ws = new WebSocket(uri);
-
-      ws.onopen = function() {
-        rstatus.set('status', 'OK');
-      }
-      ws.onmessage = function(e) {
-          ractive.set('quotes.AAPL', JSON.parse(e.data));
+      /* manage connection with the server */
+      function reconnect() {
+        rstatus.set('status', 'reconnect...');
+        var uri = 'ws://' + document.domain;
+        if (location.port) uri += ':' + location.port;
+        conn = new WebSocket(uri);
+        conn.onopen = function() {
+          rstatus.set('status', 'OK');
+        }
+        conn.onmessage = function(e) {
+          var d = JSON.parse(e.data);
+          ractive.set('quotes.'+d.symbol, d);
           rstatus.set('last', 0);
-      };
-      ws.onclose = function() {
-        setTimeout(reconnect, 1000);
+        };
+        conn.onclose = function() {
+          setTimeout(reconnect, 1000);
+        }
       }
-    }
-    reconnect();
+      reconnect();
+
+      return {
+        send: function(data) {
+          /* TODO: buffer sends if connection is down */
+          conn.send(data)
+        },};
+    })();
 
     /* update status for when we last heard from the server */
     setInterval( function () {
@@ -245,6 +254,8 @@
 
       v = v.toUpperCase();
       ractive.set('quotes.'+v, {quote: '...'});
+
+      ws.send(v);
       return false;
     });
 

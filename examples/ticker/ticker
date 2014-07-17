@@ -31,15 +31,6 @@ class Collector(object):
                 pass
         hub.spawn(self.collect)
 
-    def subscribe(self, ch):
-        self.listeners.append(ch)
-
-    def unsubscribe(self, ch):
-        self.listeners.remove(ch)
-        if not self.listeners:
-            # no one is listener, stop polling for this symbol
-            self.trigger.close()
-
     def collect(self):
         USER_AGENT = 'Mozilla/5.0 (Windows NT 6.3; ' \
                      'Win64; x64) AppleWebKit/537.36 ' \
@@ -146,9 +137,12 @@ def main():
         watch = feed.connect()
         while True:
             try:
-                ch, data = h.select(ws, watch)
+                ch, data = h.select(watch, ws)
                 if ch == watch:
                     ws.send(json.dumps(data))
+                elif ch == ws:
+                    if data:
+                        feed.subscribe(watch, data)
             except vanilla.Closed:
                 break
         feed.disconnect(watch)
