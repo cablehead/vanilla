@@ -1,0 +1,188 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>Vanilla: Chat</title>
+
+  <!--
+  http://mir.aculo.us/2013/09/16/how-to-create-a-web-app-that-looks-like-a-ios7-native-app-part-1/
+  http://blog.stevensanderson.com/2011/10/05/full-height-app-layouts-a-css-trick-to-make-it-easier/
+  http://www.html5rocks.com/en/mobile/responsivedesign/
+  https://developers.google.com/web/fundamentals/layouts/rwd-fundamentals/
+  http://paletton.com/#uid=70F1O0kt4+yqf++qp++kg4ujT5vkj
+  -->
+
+  <meta name="viewport" content="
+    width=device-width,
+    minimal-ui,
+    minimum-scale=1.0,
+    initial-scale=1.0,
+    user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link href='http://fonts.googleapis.com/css?family=Roboto'
+    rel='stylesheet' type='text/css'>
+
+  <style>
+    html,body {
+      background: #cecece;
+      font-family: -apple-system-font, 'Roboto', sans-serif;
+      margin:0px;
+      height: 100%;
+      font-size: 12pt;
+    }
+
+    button {
+        font-family: inherit;
+        font-size: 100%;
+        padding: 6px;
+        color: #fff;
+        border: none rgba(0, 0, 0, 0);  /*IE9 + everything else*/
+        text-decoration: none;
+        border-radius: 2px;
+        width: 75px;
+        background: #24ADFE;
+    }
+
+    input[type=text] {
+      font-size: 12pt;
+      padding: 4px 2%;
+      border: -webkit-border-radius: 6px;
+      border: none;
+      border-radius: 6px;
+      height: 24px;
+      -webkit-box-shadow: inset 0px 1px 2px rgba(0,0,0,.4);
+      box-shadow: inset 0px 1px 2px rgba(0,0,0,.4);
+      -webkit-appearance:none;
+      width: 65%;
+      margin-bottom: 2px;
+      }
+
+    .scrollable {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .card {
+      margin:5px;
+      padding:20px;
+      color: #4e4e4e;
+      background: #efefef;
+    }
+
+    .row, .col { overflow: hidden; position: absolute; }
+    .row { left: 0; right: 0; }
+    .col { top: 0; bottom: 0; }
+    .scroll-x { overflow-x: auto; }
+    .scroll-y { overflow-y: auto; }
+
+    .header.row {
+      height: 75px;
+      top: 0;
+      background: #24ADFE;
+      }
+
+    .body.row { top: 75px; bottom: 40px; }
+
+    .footer.row {
+      padding-top: 2px;
+      height: 40px;
+      bottom: 0;
+      background: #FFFFFF;
+      text-align:center;
+    }
+
+    .shadow {
+      -moz-box-shadow: 0 0 5px #888;
+      -webkit-box-shadow: 0 0 5px#888;
+      box-shadow: 0 0 5px #888;
+    }
+  </style>
+</head>
+
+<body>
+    <div class="header row shadow"></div>
+
+    <div id="main" class="body row scroll-y scrollable"></div>
+
+    <script id='template-message' type='text/ractive'>
+      {{#messages}}
+        <div class="card shadow">
+          {{this}}
+        </div>
+      {{/messages}}
+    </script>
+
+    <div class="footer row">
+      <form id="zeform">
+        <input id="zeinput" type="text"></input>
+        <button>Send</button>
+      </form>
+    </div>
+
+  <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
+  <script src='http://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.min.js'>
+  </script>
+  <script src=
+  'http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js'>
+  </script>
+
+  <script>
+    $(document).on('touchmove', function(event){
+      event.preventDefault();
+    });
+
+    $('.scrollable').on('touchmove', function(event) {
+      event.stopPropagation()
+    });
+
+    var messages = ['1', '2', '3', '4', '5', '6', '7'];
+
+    var ractive = new Ractive({
+      el: 'main',
+      template: '#template-message',
+      data: {messages: messages}
+    });
+
+    var resize = function() {
+      var ob = $('#main');
+      ob.animate({scrollTop: ractive.el.scrollHeight});
+    };
+
+    $(window).on('resize', _.debounce(resize, 200));
+    resize();
+
+    $('#zeform').on('submit', function() {
+      var i = $('#zeinput');
+      var message = i.val();
+      i.focus();
+      if (!message) return false;
+      messages.push(message);
+      i.val('');
+      _.delay(resize, 10);
+      return false;
+    });
+
+    /* manage connection with the server */
+    function reconnect() {
+      console.log('reconnect...');
+
+      var uri = 'ws://' + document.domain;
+      if (location.port) uri += ':' + location.port;
+      var ws = new WebSocket(uri);
+
+      ws.onopen = function() {
+        console.log('connected');
+      }
+      ws.onmessage = function(e) {
+          ractive.set(JSON.parse(e.data));
+      };
+      ws.onclose = function() {
+        setTimeout(reconnect, 1000);
+      }
+    }
+    reconnect();
+  </script>
+
+</body>
+</html>
