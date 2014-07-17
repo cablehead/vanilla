@@ -1,5 +1,27 @@
 #!/usr/bin/env python
 
+"""
+TODO:
+
+- have clients resubscribe to all their symbols on reconnect
+
+- send data immediately on subscription, if a worker is already booted
+
+- keep a worker around for a short bit of the last listener drops off, so
+  they're hot if the listener reconnects
+
+- fix crashes:
+
+    - if a websocket closes unexpectedly on read
+    - if the conn used to the http scrape closes
+
+- clean up routing - it's not good that triggers will back up if a nasdaq.com
+  is slow to respond
+
+- profile cpu usage
+
+"""
+
 import logging
 import json
 import sys
