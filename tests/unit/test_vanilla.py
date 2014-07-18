@@ -165,6 +165,25 @@ class TestChannel(object):
         assert check.recv() == 'done'
         assert gate.recv() == 2
 
+    def test_size_close(self):
+        # close shouldn't be buffered
+        h = vanilla.Hub()
+
+        ch = h.channel(size=1)
+
+        @h.spawn
+        def _():
+            for i in xrange(3):
+                try:
+                    ch.send(i)
+                except vanilla.Closed:
+                    break
+
+        h.sleep(10)
+        ch.close()
+        assert ch.recv() == 0
+        pytest.raises(vanilla.Closed, ch.recv)
+
     def test_pulse(self):
         h = vanilla.Hub()
         pulse = h.pulse(20)

@@ -473,7 +473,7 @@ class Channel(object):
                 pipe.send(item)
 
         if not self.waiters:
-            if self.size is not None:
+            if self.size is not None and not isinstance(item, Closed):
                 if len(self.items) >= self.size:
                     self.senders.append(getcurrent())
                     try:
@@ -529,6 +529,9 @@ class Channel(object):
         if not self.closed:
             self.send(Closed('closed'))
             self.closed = True
+            while self.senders:
+                sender = self.senders.popleft()
+                self.hub.throw_to(sender, Closed)
 
 
 class Signal(object):
