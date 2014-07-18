@@ -841,6 +841,22 @@ class Hub(object):
     def channel(self, size=None):
         return Channel(self, size=size)
 
+    def pulse(self, ms, size=None):
+        # returns a channel that will pulse every ms milliseconds
+        ch = self.channel(size)
+
+        @self.spawn
+        def _():
+            while True:
+                try:
+                    ch.send(True)
+                    self.sleep(ms)
+                except Closed:
+                    break
+            ch.close()
+
+        return ch
+
     # allows you to wait on a list of channels
     def select(self, *channels, **kw):
         # TODO: this needs rethinking

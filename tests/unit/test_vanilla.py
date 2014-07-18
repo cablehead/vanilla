@@ -165,6 +165,13 @@ class TestChannel(object):
         assert check.recv() == 'done'
         assert gate.recv() == 2
 
+    def test_pulse(self):
+        h = vanilla.Hub()
+        pulse = h.pulse(20)
+        h.sleep(100)
+        pulse.close()
+        assert list(pulse) == [True] * 5
+
 
 def test_select():
     h = vanilla.Hub()
