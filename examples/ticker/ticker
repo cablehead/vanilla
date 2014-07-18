@@ -15,9 +15,6 @@ TODO:
     - if a websocket closes unexpectedly on read
     - if the conn used to the http scrape closes
 
-- clean up routing - it's not good that triggers will back up if a nasdaq.com
-  is slow to respond
-
 - profile cpu usage
 
 """
@@ -39,18 +36,7 @@ class Collector(object):
         self.symbol = symbol
         self.output = hub.channel()
 
-        # put the 1 second sleep on a seperate green thread, so we can shut
-        # down the collect loop immediately with trigger.close()
-        self.trigger = hub.channel()
-
-        @hub.spawn
-        def _():
-            try:
-                while True:
-                    self.trigger.send(True)
-                    self.hub.sleep(1000)
-            except vanilla.Closed:
-                pass
+        self.pulse = hub.pulse(1000, size=1)
         hub.spawn(self.collect)
 
     def collect(self):
@@ -60,7 +46,7 @@ class Collector(object):
 
         headers = {'User-Agent': USER_AGENT}
 
-        for _ in self.trigger:
+        for _ in self.pulse:
             response = self.conn.get(
                 '/symbol/%s/real-time' % self.symbol.lower(),
                 headers=headers).recv()
@@ -135,7 +121,7 @@ class Feed(object):
         if not listeners:
             # noone is interested in the collector, let's shut it down
             print "STOPPING", symbol
-            collector.trigger.close()
+            collector.pulse.close()
             del self.collectors[symbol]
 
 
