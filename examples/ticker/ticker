@@ -5,8 +5,6 @@ TODO:
 
 - have clients resubscribe to all their symbols on reconnect
 
-- send data immediately on subscription, if a worker is already booted
-
 - keep a worker around for a short bit of the last listener drops off, so
   they're hot if the listener reconnects
 
@@ -34,6 +32,8 @@ class Collector(object):
         self.hub = hub
         self.conn = conn
         self.symbol = symbol
+
+        self.data = None
         self.output = hub.channel()
 
         self.pulse = hub.pulse(1000, size=0)
@@ -70,6 +70,7 @@ class Collector(object):
                 data['when'] += ' - market closed'
 
             print data['symbol'], data['quote']
+            self.data = data
             self.output.send(data)
 
 
@@ -99,7 +100,6 @@ class Feed(object):
         self.connections[ch].append(symbol)
 
         if symbol not in self.collectors:
-            print "BOOTING", symbol
             # there's not a collector for this symbol yet, so let's boot one
             collector = Collector(self.hub, self.conn, symbol)
             listeners = [ch]
@@ -114,13 +114,13 @@ class Feed(object):
         else:
             collector, listeners = self.collectors[symbol]
             listeners.append(ch)
+            ch.send(collector.data)
 
     def unsubscribe(self, ch, symbol):
         collector, listeners = self.collectors[symbol]
         listeners.remove(ch)
         if not listeners:
             # noone is interested in the collector, let's shut it down
-            print "STOPPING", symbol
             collector.pulse.close()
             del self.collectors[symbol]
 
