@@ -500,8 +500,6 @@ class TestHTTP(object):
         h.stop()
 
     def test_get_drop(self):
-        # TODO
-        return
         h = vanilla.Hub()
 
         @h.http.listen()
@@ -512,12 +510,14 @@ class TestHTTP(object):
 
         uri = 'http://localhost:%s' % serve.port
 
+        # test dropping the connection while chunks are being transmitted
         client = h.http.connect(uri)
-        response = client.get('/')
-        assert response.recv().code == 200
-        client.conn.close()
+        response = client.get('/c').recv()
+        assert response.status.code == 200
 
-        h.sleep(1000)
+        client.conn.close()
+        assert response.body.recv() == '0'
+        pytest.raises(vanilla.Interrupted, response.body.recv)
 
     def test_websocket(self):
         h = vanilla.Hub()

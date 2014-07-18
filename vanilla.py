@@ -34,6 +34,10 @@ class Timeout(Exception):
     pass
 
 
+class Interrupted(Exception):
+    pass
+
+
 class Closed(Exception):
     pass
 
@@ -275,7 +279,7 @@ class FD(object):
                         except (socket.error, OSError), e:
                             if e.errno == 11:  # EAGAIN
                                 break
-                            raise
+                            raise Stop
 
                         if not data:
                             raise Stop
@@ -285,15 +289,18 @@ class FD(object):
                 elif event & C.EPOLLOUT:
                     send_continue.send(True)
 
-        except Closed:
+        except Closed, e:
             pass
 
         self.close()
 
     def shutdown(self):
         if self.recv_pending.closed and self.send_pending.closed:
-            self.hub.unregister(self.conn.fileno())
-            self.conn.close()
+            try:
+                self.hub.unregister(self.conn.fileno())
+                self.conn.close()
+            except:
+                pass
 
     def close(self):
         self.recv_pending.close()
@@ -1569,7 +1576,11 @@ class HTTPClient(object):
 
             if headers.get('transfer-encoding') == 'chunked':
                 while True:
-                    chunk = self.http.recv_chunk()
+                    try:
+                        chunk = self.http.recv_chunk()
+                    except Closed:
+                        ch.send(Interrupted())
+                        return
                     if not chunk:
                         break
                     ch.send(chunk)
@@ -1778,8 +1789,11 @@ class HTTPListener(object):
             took = int((time.time() - start) * 1000)
             print request.method, request.path, response.status, took
 
+        except Closed:
+            pass
+
         except:
-            print "Unexpected failure:", conn.fileno()
+            print "Unexpected failure:"
             import traceback
             traceback.print_exc()
 
