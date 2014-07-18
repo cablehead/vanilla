@@ -629,6 +629,22 @@ class TestHTTP(object):
         ws.send(message)
         assert h.select(ws) == (ws, message)
 
+    def test_request_timeout(self):
+        h = vanilla.Hub()
+
+        @h.http.listen(request_timeout=20)
+        def serve(request, response):
+            return 'toby'
+
+        uri = 'http://localhost:%s' % serve.port
+
+        client = h.http.connect(uri)
+
+        h.sleep(40)
+        response = client.get('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'toby'
+
 
 class TestReactive(object):
     """

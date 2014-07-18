@@ -330,18 +330,18 @@ class FD(object):
 
         return ''.join(segments)
 
-    def recv_partition(self, sep):
+    def recv_partition(self, sep, timeout=None):
         received = ''
         while True:
-            received += self.recv_pending.recv()
+            received += self.recv_pending.recv(timeout)
             keep, matched, additonal = received.partition(sep)
             if matched:
                 if additonal:
                     self.recv_pending.items.appendleft(additonal)
                 return keep
 
-    def recv_line(self):
-        return self.recv_partition('\n')
+    def recv_line(self, timeout=None):
+        return self.recv_partition('\n', timeout)
 
     def send(self, data):
         self.send_pending.send(data)
@@ -1386,16 +1386,25 @@ class HTTP(object):
     def __init__(self, hub):
         self.hub = hub
 
-    def listen(self, port=0, host='127.0.0.1', server=None):
+    def listen(
+            self,
+            port=0,
+            host='127.0.0.1',
+            server=None,
+            request_timeout=20000):
         if server:
-            return HTTPListener(self.hub, host, port, server)
-        return functools.partial(HTTPListener, self.hub, host, port)
+            return HTTPListener(self.hub, host, port, request_timeout, server)
+        return functools.partial(
+            HTTPListener, self.hub, host, port, request_timeout)
 
     def connect(self, url):
         return HTTPClient(self.hub, url)
 
-    def cup(self, port=0, host='127.0.0.1', base_path=None):
-        return HTTPCup(self.hub, host, port, base_path=base_path)
+    def cup(
+            self,
+            port=0,
+            host='127.0.0.1', base_path=None, request_timeout=20000):
+        return HTTPCup(self.hub, host, port, base_path, request_timeout)
 
 
 class HTTPSocket(object):
@@ -1414,27 +1423,27 @@ class HTTPSocket(object):
     def recv_bytes(self, n):
         return self.fd.recv_bytes(n)
 
-    def recv_line(self):
-        return self.fd.recv_partition('\r\n')
+    def recv_line(self, timeout=None):
+        return self.fd.recv_partition('\r\n', timeout)
 
     def send_headers(self, headers):
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in headers.iteritems())
         self.send(headers+'\r\n'+'\r\n')
 
-    def recv_headers(self):
+    def recv_headers(self, timeout=None):
         headers = Insensitive()
         while True:
-            line = self.recv_line()
+            line = self.recv_line(timeout)
             if not line:
                 break
             k, v = line.split(': ', 1)
             headers[k] = v.strip()
         return headers
 
-    def recv_request(self):
-        method, path, version = self.recv_line().split(' ', 2)
-        headers = self.recv_headers()
+    def recv_request(self, timeout=None):
+        method, path, version = self.recv_line(timeout).split(' ', 2)
+        headers = self.recv_headers(timeout)
         return self.Request(method, path, version, headers)
 
     def recv_response(self):
@@ -1570,19 +1579,34 @@ class HTTPClient(object):
         def consume(self):
             return ''.join(self.body)
 
+    def reconnect(self):
+        # TODO: don't allow reconnects once we've upgraded to a websocket
+        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.conn.connect((self.host, self.port))
+        self.conn.setblocking(0)
+        fd = FD(self.hub, self.conn)
+        self.http = HTTPSocket(fd)
+
+        # TODO: this sort of thing is messy, what's a better API?
+        # clean up responses if our connection dies unexpectedly
+        @self.hub.spawn
+        def _():
+            fd.closed.wait()
+            while True:
+                if not self.responses:
+                    break
+                ch = self.responses.popleft()
+                ch.close()
+
+        self.hub.spawn(self.receiver)
+
     def __init__(self, hub, url):
         self.hub = hub
 
         parsed = urlparse.urlsplit(url)
         assert parsed.query == ''
         assert parsed.fragment == ''
-        host, port = urllib.splitnport(parsed.netloc, 80)
-
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.conn.connect((host, port))
-        self.conn.setblocking(0)
-
-        self.http = HTTPSocket(FD(hub, self.conn))
+        self.host, self.port = urllib.splitnport(parsed.netloc, 80)
 
         self.agent = 'vanilla/%s' % __version__
 
@@ -1592,18 +1616,7 @@ class HTTPClient(object):
             ('Host', parsed.netloc), ])
 
         self.responses = collections.deque()
-
-        # clean up responses if our connection dies unexpectedly
-        @hub.spawn
-        def _():
-            self.http.fd.closed.wait()
-            while True:
-                if not self.responses:
-                    break
-                ch = self.responses.popleft()
-                ch.close()
-
-        hub.spawn(self.receiver)
+        self.reconnect()
 
     def receiver(self):
         while True:
@@ -1611,6 +1624,12 @@ class HTTPClient(object):
                 status = self.http.recv_response()
             except Closed:
                 break
+
+            if status.code == 408:
+                # Request-Timeout
+                self.http.fd.close()
+                return
+
             ch = self.responses.popleft()
 
             headers = self.http.recv_headers()
@@ -1659,6 +1678,9 @@ class HTTPClient(object):
         request = '%s %s %s\r\n' % (method, path, version)
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in request_headers.iteritems())
+
+        if self.http.fd.closed:
+            self.reconnect()
 
         self.http.send(request+headers+'\r\n'+'\r\n')
 
@@ -1769,7 +1791,7 @@ class HTTPListener(object):
                 self.init()
             self.http.send(body)
 
-    def __init__(self, hub, host, port, server):
+    def __init__(self, hub, host, port, request_timeout, server):
         self.hub = hub
 
         self.sock = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1780,6 +1802,8 @@ class HTTPListener(object):
 
         self.port = s.getsockname()[1]
         self.server = server
+
+        self.request_timeout = request_timeout
 
         hub.spawn(self.accept)
 
@@ -1801,7 +1825,14 @@ class HTTPListener(object):
             http = HTTPSocket(FD(self.hub, conn))
 
             # TODO: support http keep alives
-            request = http.recv_request()
+            try:
+                request = http.recv_request(timeout=self.request_timeout)
+            except Timeout:
+                print "Request Timeout"
+                http.send_response(408, 'Request Timeout')
+                http.fd.close()
+                return
+
             response = self.Response(request, http, self.hub.channel())
 
             @self.hub.spawn
@@ -1861,14 +1892,15 @@ class HTTPCup(object):
     TODO: all of HTTP should go into it's of module, but in-particular this
     *really* should!
     """
-    def __init__(self, hub, host, port, base_path=None):
+    def __init__(self, hub, host, port, base_path, request_timeout):
         # 3rd party dependency
         import routes
 
         self.hub = hub
         self.base_path = base_path
 
-        self.server = HTTPListener(hub, host, port, self.serve)
+        self.server = HTTPListener(
+            hub, host, port, request_timeout, self.serve)
         self.port = self.server.port
 
         self.routes = routes.Mapper()
