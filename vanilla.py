@@ -1558,6 +1558,7 @@ class HTTPClient(object):
             ('Host', parsed.netloc), ])
 
         self.responses = collections.deque()
+
         # clean up responses if our connection dies unexpectedly
         @hub.spawn
         def _():
@@ -1567,6 +1568,7 @@ class HTTPClient(object):
                     break
                 ch = self.responses.popleft()
                 ch.close()
+
         hub.spawn(self.receiver)
 
     def receiver(self):
