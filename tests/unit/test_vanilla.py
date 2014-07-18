@@ -60,54 +60,110 @@ def test_preserve_exception():
     pytest.raises(CheckException, e.reraise)
 
 
-def test_Channel():
-    h = vanilla.Hub()
-    c = h.channel()
+class TestChannel(object):
+    def test_basics(self):
+        # TODO: split this into seperate tests
+        h = vanilla.Hub()
+        c = h.channel()
 
-    # test send before receive
-    c.send('123')
-    assert '123' == c.recv()
+        # test send before receive
+        c.send('123')
+        assert '123' == c.recv()
 
-    # test receive before send
-    h.spawn_later(10, c.send, '123')
-    assert '123' == c.recv()
+        # test receive before send
+        h.spawn_later(10, c.send, '123')
+        assert '123' == c.recv()
 
-    # test timeout
-    h.spawn_later(10, c.send, '123')
-    pytest.raises(vanilla.Timeout, c.recv, timeout=5)
-    assert c.recv(timeout=10) == '123'
+        # test timeout
+        h.spawn_later(10, c.send, '123')
+        pytest.raises(vanilla.Timeout, c.recv, timeout=5)
+        assert c.recv(timeout=10) == '123'
 
-    # test preserving exception details
-    try:
-        raise CheckException('oh hai')
-    except:
-        c.throw()
-    pytest.raises(CheckException, c.recv)
+        # test preserving exception details
+        try:
+            raise CheckException('oh hai')
+        except:
+            c.throw()
+        pytest.raises(CheckException, c.recv)
 
-    # test pipe
-    @c.pipe
-    def out(c, out):
-        for x in c:
-            if not x % 2:
-                out.send(x*2)
+        # test pipe
+        @c.pipe
+        def out(c, out):
+            for x in c:
+                if not x % 2:
+                    out.send(x*2)
 
-    # assert exceptions are propogated
-    c.send('123')
-    pytest.raises(TypeError, out.recv)
+        # assert exceptions are propogated
+        c.send('123')
+        pytest.raises(TypeError, out.recv)
 
-    # odd numbers are filtered
-    c.send(5)
-    pytest.raises(vanilla.Timeout, out.recv, timeout=0)
+        # odd numbers are filtered
+        c.send(5)
+        pytest.raises(vanilla.Timeout, out.recv, timeout=0)
 
-    # success
-    c.send(2)
-    assert 4 == out.recv(timeout=0)
+        # success
+        c.send(2)
+        assert 4 == out.recv(timeout=0)
 
-    # test closing the channel and channel iteration
-    for i in xrange(10):
-        c.send(i)
-    c.close()
-    assert list(out) == [0, 4, 8, 12, 16]
+        # test closing the channel and channel iteration
+        for i in xrange(10):
+            c.send(i)
+        c.close()
+        assert list(out) == [0, 4, 8, 12, 16]
+
+    def test_size_0(self):
+        h = vanilla.Hub()
+        check = h.channel()
+
+        gate = h.channel(size=0)
+
+        @h.spawn
+        def _():
+            for i in xrange(3):
+                gate.send(i)
+                check.send(i)
+            check.send('done')
+
+        h.sleep(10)
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+
+        assert gate.recv() == 0
+        assert check.recv() == 0
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+
+        assert gate.recv() == 1
+        assert check.recv() == 1
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+
+        assert gate.recv() == 2
+        assert check.recv() == 2
+        assert check.recv() == 'done'
+
+    def test_size(self):
+        h = vanilla.Hub()
+        check = h.channel()
+
+        gate = h.channel(size=1)
+
+        @h.spawn
+        def _():
+            for i in xrange(3):
+                gate.send(i)
+                check.send(i)
+            check.send('done')
+
+        h.sleep(10)
+        assert check.recv() == 0
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+
+        assert gate.recv() == 0
+        assert check.recv() == 1
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+
+        assert gate.recv() == 1
+        assert check.recv() == 2
+        assert check.recv() == 'done'
+        assert gate.recv() == 2
 
 
 def test_select():

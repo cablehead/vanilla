@@ -387,14 +387,19 @@ class Event(object):
 
 class Channel(object):
 
-    __slots__ = ['hub', 'closed', 'items', 'waiters', 'pipes']
+    __slots__ = [
+        'hub', 'size', 'closed', 'items', 'senders', 'waiters', 'pipes']
 
-    def __init__(self, hub):
+    def __init__(self, hub, size=None):
         self.hub = hub
+        self.size = size
+
         self.closed = False
-        self.items = collections.deque()
-        self.waiters = collections.deque()
         self.pipes = None
+
+        self.items = collections.deque()
+        self.senders = collections.deque()
+        self.waiters = collections.deque()
 
     def pipe(self, f):
         in_ = self.hub.channel()
@@ -462,11 +467,16 @@ class Channel(object):
 
         # TODO: it's likely if the channel is piped, we don't want it's waiters
         # queue to fill up
+        # TODO: how does piping fit in with size?
         if self.pipes:
             for pipe in self.pipes:
                 pipe.send(item)
 
         if not self.waiters:
+            if self.size is not None:
+                if len(self.items) >= self.size:
+                    self.senders.append(getcurrent())
+                    self.hub.pause()
             self.items.append(item)
             return
 
@@ -477,6 +487,11 @@ class Channel(object):
             self.hub.switch_to(getter, (self, item))
 
     def recv(self, timeout=-1):
+        if self.senders:
+            # resume a blocked sender
+            sender = self.senders.popleft()
+            self.hub.switch_to(sender)
+
         if self.items:
             item = self.items.popleft()
             if isinstance(item, preserve_exception):
@@ -823,8 +838,8 @@ class Hub(object):
     def event(self, fired=False):
         return Event(self, fired)
 
-    def channel(self):
-        return Channel(self)
+    def channel(self, size=None):
+        return Channel(self, size=size)
 
     # allows you to wait on a list of channels
     def select(self, *channels, **kw):
