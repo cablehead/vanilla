@@ -240,6 +240,7 @@ class FD(object):
 
         self.recv_pending = self.hub.channel()
         self.send_pending = self.hub.channel()
+        self.closed = self.hub.event()
 
         self.hub.spawn(self.loop)
 
@@ -261,7 +262,8 @@ class FD(object):
                         if e.errno == 11:  # EAGAIN
                             send_continue.recv()
                             continue
-                        raise
+                        self.close()
+                        return
                     if n == len(data):
                         break
                     data = data[n:]
@@ -301,6 +303,7 @@ class FD(object):
                 self.conn.close()
             except:
                 pass
+        self.closed.set()
 
     def close(self):
         self.recv_pending.close()
@@ -1555,6 +1558,15 @@ class HTTPClient(object):
             ('Host', parsed.netloc), ])
 
         self.responses = collections.deque()
+        # clean up responses if our connection dies unexpectedly
+        @hub.spawn
+        def _():
+            self.http.fd.closed.wait()
+            while True:
+                if not self.responses:
+                    break
+                ch = self.responses.popleft()
+                ch.close()
         hub.spawn(self.receiver)
 
     def receiver(self):

@@ -514,10 +514,16 @@ class TestHTTP(object):
         client = h.http.connect(uri)
         response = client.get('/c').recv()
         assert response.status.code == 200
-
         client.conn.close()
         assert response.body.recv() == '0'
         pytest.raises(vanilla.Interrupted, response.body.recv)
+
+        # test dropping the connection before the request is even initiated
+        client = h.http.connect(uri)
+        client.conn.close()
+        ch = client.get('/c')
+        response = ch.recv
+        pytest.raises(vanilla.Closed, ch.recv)
 
     def test_websocket(self):
         h = vanilla.Hub()
