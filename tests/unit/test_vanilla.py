@@ -172,6 +172,13 @@ class TestChannel(object):
         pulse.close()
         assert list(pulse) == [True] * 5
 
+    def test_pulse_size(self):
+        h = vanilla.Hub()
+        pulse = h.pulse(20, size=1)
+        h.sleep(100)
+        pulse.close()
+        assert list(pulse) == [True] * 1
+
 
 def test_select():
     h = vanilla.Hub()

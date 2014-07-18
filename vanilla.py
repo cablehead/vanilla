@@ -476,7 +476,10 @@ class Channel(object):
             if self.size is not None:
                 if len(self.items) >= self.size:
                     self.senders.append(getcurrent())
-                    self.hub.pause()
+                    try:
+                        self.hub.pause()
+                    except Closed:
+                        return
             self.items.append(item)
             return
 
