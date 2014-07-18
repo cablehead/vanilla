@@ -36,7 +36,7 @@ class Collector(object):
         self.symbol = symbol
         self.output = hub.channel()
 
-        self.pulse = hub.pulse(1000, size=1)
+        self.pulse = hub.pulse(1000, size=0)
         hub.spawn(self.collect)
 
     def collect(self):
