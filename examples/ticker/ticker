@@ -21,6 +21,7 @@ import logging
 import json
 import sys
 import os
+import re
 
 from bs4 import BeautifulSoup
 
@@ -87,8 +88,6 @@ class Feed(object):
     def connect(self):
         ch = self.hub.channel()
         self.connections[ch] = []
-        # every starts with AAPl in their feed
-        self.subscribe(ch, 'AAPL')
         return ch
 
     def disconnect(self, ch):
@@ -100,6 +99,7 @@ class Feed(object):
         self.connections[ch].append(symbol)
 
         if symbol not in self.collectors:
+            print "BOOTING", symbol
             # there's not a collector for this symbol yet, so let's boot one
             collector = Collector(self.hub, self.conn, symbol)
             listeners = [ch]
@@ -120,6 +120,7 @@ class Feed(object):
         collector, listeners = self.collectors[symbol]
         listeners.remove(ch)
         if not listeners:
+            print "STOPPING", symbol
             # noone is interested in the collector, let's shut it down
             collector.pulse.close()
             del self.collectors[symbol]
@@ -140,6 +141,8 @@ def main():
 
     app.static('/', 'index.html')
 
+    pattern = re.compile('^[a-zA-Z]{1,5}$')
+
     @app.websocket('/')
     def index(ws):
         watch = feed.connect()
@@ -149,7 +152,7 @@ def main():
                 if ch == watch:
                     ws.send(json.dumps(data))
                 elif ch == ws:
-                    if data:
+                    if pattern.match(data):
                         feed.subscribe(watch, data)
             except vanilla.Closed:
                 break

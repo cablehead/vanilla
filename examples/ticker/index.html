@@ -192,7 +192,7 @@
       event.stopPropagation()
     });
 
-    var ractive = new Ractive({
+    var rsubscriptions = new Ractive({
       el: 'quote',
       noIntro: true,
       template: '#template-quote',
@@ -216,27 +216,37 @@
       /* manage connection with the server */
       function reconnect() {
         rstatus.set('status', 'reconnect...');
+
         var uri = 'ws://' + document.domain;
         if (location.port) uri += ':' + location.port;
         conn = new WebSocket(uri);
+
         conn.onopen = function() {
           rstatus.set('status', 'OK');
+          _.each(_.keys(rsubscriptions.get('quotes')), function(item) {
+            conn.send(item);
+          });
         }
+
         conn.onmessage = function(e) {
           var d = JSON.parse(e.data);
-          ractive.set('quotes.'+d.symbol, d);
+          rsubscriptions.set('quotes.'+d.symbol, d);
           rstatus.set('last', 0);
         };
+
         conn.onclose = function() {
+          rstatus.set('status', 'disconnected');
           setTimeout(reconnect, 1000);
         }
       }
+
       reconnect();
 
       return {
-        send: function(data) {
-          /* TODO: buffer sends if connection is down */
-          conn.send(data)
+        subscribe: function(symbol) {
+          if (rstatus.get('status') == 'OK') {
+            conn.send(symbol);
+          }
         },};
     })();
 
@@ -246,17 +256,22 @@
     }, 1000);
 
     $('#more').on('submit', function() {
-      var i = $('#more input');
-      var v = i.val();
+      try {
+        var i = $('#more input');
+        var v = i.val();
 
-      if (!v) return false;
-      i.blur().val('');
+        if (!v) return false;
+        i.blur().val('');
 
-      v = v.toUpperCase();
-      ractive.set('quotes.'+v, {quote: '...'});
+        v = v.toUpperCase();
+        rsubscriptions.set('quotes.'+v, {quote: '...'});
+        ws.subscribe(v);
+        return false;
 
-      ws.send(v);
-      return false;
+      } catch(err) {
+        console.log(err);
+        return false
+      }
     });
 
   </script>
