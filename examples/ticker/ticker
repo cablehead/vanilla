@@ -3,8 +3,6 @@
 """
 TODO:
 
-- have clients resubscribe to all their symbols on reconnect
-
 - keep a worker around for a short bit of the last listener drops off, so
   they're hot if the listener reconnects
 
