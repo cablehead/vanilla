@@ -22,6 +22,13 @@
 - gather: once all are ready, recv all
 
 
+### selectable api:
+
+- are you ready now? (recv(timeout=0)?)
+- enqueue me, but don't pause
+- dequeue me (called if we give up on the select)
+
+
 ### consider:
 
 - what happens if there's an exception on the send side
