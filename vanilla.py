@@ -1475,6 +1475,7 @@ class WebSocket(object):
     MASK = FIN = 0b10000000
     RSV = 0b01110000
     OP = 0b00001111
+    CONTROL = 0b00001000
     PAYLOAD = 0b01111111
 
     OP_TEXT = 0x1
@@ -1545,6 +1546,7 @@ class WebSocket(object):
                 self.__channel__.send(self._recv())
             except Closed:
                 self.__channel__.close()
+                break
 
     def _recv(self):
         b1, length, = struct.unpack('!BB', self.fd.recv_bytes(2))
@@ -1555,6 +1557,17 @@ class WebSocket(object):
         else:
             assert length & WebSocket.MASK
             length = length & WebSocket.PAYLOAD
+
+        # TODO: support binary
+        opcode = b1 & WebSocket.OP
+
+        if opcode & WebSocket.CONTROL:
+            # this is a control frame
+            assert length <= 125
+            if opcode == WebSocket.OP_CLOSE:
+                self.fd.recv_bytes(length)
+                self.fd.close()
+                raise Closed
 
         if length == 126:
             length, = struct.unpack('!H', self.fd.recv_bytes(2))
