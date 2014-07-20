@@ -48,6 +48,14 @@ class Recver(Pair):
         while True:
             yield self.recv()
 
+    def map(self, f):
+        sender, recver = pipe(self.hub)
+        @self.hub.spawn
+        def _():
+            for item in self:
+                sender.send(f(item))
+        return recver
+
 
 def pipe(hub):
     sender = Sender(hub)
@@ -67,17 +75,6 @@ def stream(hub):
     return dec
 
 
-def map(hub, upstream):
-    def wrap(f):
-        sender, recver = pipe(hub)
-        @hub.spawn
-        def _():
-            for item in upstream:
-                sender.send(f(item))
-        return recver
-    return wrap
-
-
 def test_stream():
     h = vanilla.Hub()
 
@@ -91,13 +88,14 @@ def test_stream():
             out.send(i)
 
 
-    @map(h, counter)
-    def mapped(n):
+    @counter.map
+    def double(n):
         return n * 2
 
-    print mapped.recv()
-    print mapped.recv()
-    print mapped.recv()
+
+    print double.recv()
+    print double.recv()
+    print double.recv()
 
     print
     print
