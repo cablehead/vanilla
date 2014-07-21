@@ -52,6 +52,8 @@ class Pair(object):
 
 class Sender(Pair):
     def send(self, item, timeout=-1):
+        # only allow one send at a time
+        assert self.current is None
         if not self.ready:
             self.pause(timeout=timeout)
         return self.hub.switch_to(self.other, self.pair(), item)
