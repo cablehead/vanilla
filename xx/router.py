@@ -16,14 +16,17 @@ class Pair(object):
         self.current = None
         self.pair = None
 
-    def yack(self, *a, **kw):
-        print "YAKCK UAKC", a, kw, self.__class__
+    def on_abandoned(self, *a, **kw):
+        if self.current:
+            self.hub.throw_to(self.current, Abandoned)
 
     def pair_to(self, pair):
-        self.pair = weakref.ref(pair, self.yack)
+        self.pair = weakref.ref(pair, self.on_abandoned)
 
     @property
     def other(self):
+        if self.pair() is None:
+            raise Abandoned
         return self.pair().current
 
     @property
@@ -116,8 +119,6 @@ class Hub(vanilla.Hub):
 vanilla.Hub = Hub
 
 
-
-
 def buffer(hub, size):
     buff = collections.deque()
 
@@ -157,6 +158,38 @@ def test_stream():
     assert counter.recv() == 0
     h.sleep(10)
     assert counter.recv() == 1
+
+
+def test_abandoned_sender():
+    h = vanilla.Hub()
+
+    check_sender, check_recver = h.pipe()
+
+    # test abondoned after pause
+    sender, recver = h.pipe()
+
+    @h.spawn
+    def _():
+        pytest.raises(vanilla.Abandoned, sender.send, 10)
+        check_sender.send('done')
+
+    # sleep so the spawn runs and the send pauses
+    h.sleep(1)
+    del recver
+    gc.collect()
+    assert check_recver.recv() == 'done'
+
+    # test abondoned before pause
+    sender, recver = h.pipe()
+
+    @h.spawn
+    def _():
+        pytest.raises(vanilla.Abandoned, sender.send, 10)
+        check_sender.send('done')
+
+    del recver
+    gc.collect()
+    assert check_recver.recv() == 'done'
 
 
 def test_pulse():
@@ -277,4 +310,3 @@ def test_buffer():
 
     assert recver.recv() == 1
     assert recver.recv() == 2
-
