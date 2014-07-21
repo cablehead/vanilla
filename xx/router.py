@@ -96,7 +96,9 @@ def pulse(hub, ms, item=True):
     return _
 
 
-def select(hub, *pairs):
+def select(hub, *pairs, **kw):
+    timeout = kw.pop('timeout', -1)
+
     for pair in pairs:
         if pair.ready:
             return pair, isinstance(pair, Recver) and pair.recv() or None
@@ -104,10 +106,11 @@ def select(hub, *pairs):
     for pair in pairs:
         pair.select()
 
-    fired, item = hub.pause()
-
-    for pair in pairs:
-        pair.unselect()
+    try:
+        fired, item = hub.pause(timeout=timeout)
+    finally:
+        for pair in pairs:
+            pair.unselect()
 
     return fired, item
 
@@ -178,6 +181,41 @@ def test_select():
     assert item == 10
 
     assert check_r.recv() == 20
+    assert check_r.recv() == 'done'
+
+
+def test_select_timeout():
+    h = vanilla.Hub()
+
+    s1, r1 = pipe(h)
+    s2, r2 = pipe(h)
+    check_s, check_r = pipe(h)
+
+    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=0)
+
+    @h.spawn
+    def _():
+        h.sleep(20)
+        check_s.send(r1.recv())
+
+    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=10)
+
+    ch, item = select(h, s1, r2, timeout=20)
+    assert ch == s1
+    s1.send(20)
+    assert check_r.recv() == 20
+
+    @h.spawn
+    def _():
+        h.sleep(20)
+        s2.send(10)
+        check_s.send('done')
+
+    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=10)
+
+    ch, item = select(h, s1, r2, timeout=20)
+    assert ch == r2
+    assert item == 10
     assert check_r.recv() == 'done'
 
 
