@@ -52,12 +52,16 @@ class Sender(Pair):
 
 class Recver(Pair):
     def recv(self):
+        # only allow one recv at a time
+        assert self.current is None
+
         if self.ready:
             self.current = getcurrent()
             # switch directly, as we need to pause
             _, ret = self.other.switch(self.pair(), None)
             self.current = None
             return ret
+
         return self.pause()
 
 
