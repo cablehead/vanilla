@@ -20,12 +20,17 @@ class Pair(object):
     def pair_to(self, pair):
         self.pair = weakref.ref(pair, self.yack)
 
-    def ready(self):
-        return self.pair().current is not None
+    @property
+    def other(self):
+        return self.pair().current
 
-    def select(self):
+    @property
+    def ready(self):
+        return self.other is not None
+
+    def select(self, current=None):
         assert self.current is None
-        self.current = getcurrent()
+        self.current = current or getcurrent()
 
     def unselect(self):
         assert self.current == getcurrent()
@@ -33,26 +38,26 @@ class Pair(object):
 
     def pause(self):
         self.select()
-        ret = self.hub.pause()
+        _, ret = self.hub.pause()
         self.unselect()
         return ret
 
 
 class Sender(Pair):
     def send(self, item):
-        if self.ready():
-            current = self.pair().current
-        else:
-            current = self.pause()
-
-        self.hub.switch_to(current, item)
+        if not self.ready:
+            self.pause()
+        return self.hub.switch_to(self.other, self.pair(), item)
 
 
 class Recver(Pair):
     def recv(self):
-        if self.ready():
-            item = self.hub.switch_to(self.pair().current, getcurrent())
-            return item
+        if self.ready:
+            self.current = getcurrent()
+            # switch directly, as we need to pause
+            _, ret = self.other.switch(self.pair(), None)
+            self.current = None
+            return ret
         return self.pause()
 
 
@@ -85,29 +90,97 @@ def pulse(hub, ms, item=True):
 
 def select(hub, *pairs):
     for pair in pairs:
-        if pair.ready():
-            return pair.recv()
+        if pair.ready:
+            return pair, isinstance(pair, Recver) and pair.recv() or None
 
     for pair in pairs:
         pair.select()
 
-    item = hub.pause()
+    fired, item = hub.pause()
 
     for pair in pairs:
         pair.unselect()
 
-    return item
+    return fired, item
+
+
+def buffer(hub, size):
+    buff = collections.deque()
+
+    # TODO: don't form a closure around sender and recver
+    sender, _recver = pipe(hub)
+    _sender, recver = pipe(hub)
+
+    @hub.spawn
+    def _():
+        while True:
+            watch = []
+            if len(buff) < size:
+                watch.append(_recver)
+            if buff:
+                watch.append(_sender)
+
+            ch, item = select(hub, *watch)
+
+            if ch == _recver:
+                buff.append(item)
+
+            elif ch == _sender:
+                item = buff.popleft()
+                _sender.send(item)
+
+    return sender, recver
 
 
 def test_stream():
-    print
-    print
-
     h = vanilla.Hub()
 
-    ch1 = pulse(h, 1000, 'boom')
-    h.sleep(500)
-    ch2 = pulse(h, 1000, 'tick')
+    @stream(h)
+    def counter(sender):
+        for i in xrange(10):
+            sender.send(i)
 
-    while True:
-        print select(h, ch1, ch2)
+    assert counter.recv() == 0
+    h.sleep(10)
+    assert counter.recv() == 1
+
+
+def test_select():
+    h = vanilla.Hub()
+
+    s1, r1 = pipe(h)
+    s2, r2 = pipe(h)
+    check_s, check_r = pipe(h)
+
+    @h.spawn
+    def _():
+        check_s.send(r1.recv())
+
+    @h.spawn
+    def _():
+        s2.send(10)
+        check_s.send('done')
+
+    ch, item = select(h, s1, r2)
+    assert ch == s1
+    s1.send(20)
+
+    ch, item = select(h, s1, r2)
+    assert ch == r2
+    assert item == 10
+
+    assert check_r.recv() == 20
+    assert check_r.recv() == 'done'
+
+
+def test_buffer():
+    h = vanilla.Hub()
+
+    sender, recver = buffer(h, 2)
+
+    sender.send(1)
+    sender.send(2)
+
+    assert recver.recv() == 1
+    assert recver.recv() == 2
+
