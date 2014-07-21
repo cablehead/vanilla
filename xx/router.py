@@ -83,25 +83,21 @@ class Hub(vanilla.Hub):
         recver.pair_to(sender)
         return sender, recver
 
+    def stream(self, f):
+        sender, recver = self.pipe()
+        self.spawn(f, sender)
+        return recver
+
+    def pulse(self, ms, item=True):
+        @self.stream
+        def _(sender):
+            while True:
+                self.sleep(ms)
+                sender.send(item)
+        return _
+
 
 vanilla.Hub = Hub
-
-
-def stream(hub):
-    def dec(f):
-        sender, recver = hub.pipe()
-        hub.spawn(f, sender)
-        return recver
-    return dec
-
-
-def pulse(hub, ms, item=True):
-    @stream(hub)
-    def _(out):
-        while True:
-            hub.sleep(ms)
-            out.send(item)
-    return _
 
 
 def select(hub, *pairs, **kw):
@@ -154,7 +150,7 @@ def buffer(hub, size):
 def test_stream():
     h = vanilla.Hub()
 
-    @stream(h)
+    @h.stream
     def counter(sender):
         for i in xrange(10):
             sender.send(i)
@@ -162,6 +158,23 @@ def test_stream():
     assert counter.recv() == 0
     h.sleep(10)
     assert counter.recv() == 1
+
+
+def test_pulse():
+    h = vanilla.Hub()
+
+    trigger = h.pulse(20)
+    pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+    h.sleep(20)
+    assert trigger.recv(timeout=0)
+    pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+    h.sleep(20)
+    assert trigger.recv(timeout=0)
+    pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+    # TODO: test abandoned
 
 
 def test_select():
