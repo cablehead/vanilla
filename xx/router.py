@@ -23,37 +23,37 @@ class Pair(object):
     def ready(self):
         return self.pair().current is not None
 
+    def select(self):
+        assert self.current is None
+        self.current = getcurrent()
+
+    def unselect(self):
+        assert self.current == getcurrent()
+        self.current = None
+
+    def pause(self):
+        self.select()
+        ret = self.hub.pause()
+        self.unselect()
+        return ret
+
 
 class Sender(Pair):
     def send(self, item):
-        if self.pair().current:
+        if self.ready():
             current = self.pair().current
-
         else:
-            self.current = getcurrent()
-            current = self.hub.pause()
-            self.current = None
+            current = self.pause()
 
         self.hub.switch_to(current, item)
 
 
 class Recver(Pair):
     def recv(self):
-        if self.pair().current:
+        if self.ready():
             item = self.hub.switch_to(self.pair().current, getcurrent())
             return item
-
-        self.current = getcurrent()
-        item = self.hub.pause()
-        self.current = None
-        return item
-
-    def select(self):
-        self.current = getcurrent()
-
-    def unselect(self):
-        if self.current == getcurrent():
-            self.current = None
+        return self.pause()
 
 
 def pipe(hub):
@@ -83,18 +83,18 @@ def pulse(hub, ms, item=True):
     return _
 
 
-def select(hub, *recvers):
-    for recver in recvers:
-        if recver.ready():
-            return recver.recv()
+def select(hub, *pairs):
+    for pair in pairs:
+        if pair.ready():
+            return pair.recv()
 
-    for recver in recvers:
-        recver.select()
+    for pair in pairs:
+        pair.select()
 
     item = hub.pause()
 
-    for recver in recvers:
-        recver.unselect()
+    for pair in pairs:
+        pair.unselect()
 
     return item
 
@@ -111,5 +111,3 @@ def test_stream():
 
     while True:
         print select(h, ch1, ch2)
-
-
