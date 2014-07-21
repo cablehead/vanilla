@@ -192,6 +192,38 @@ def test_abandoned_sender():
     assert check_recver.recv() == 'done'
 
 
+def test_abandoned_recver():
+    h = vanilla.Hub()
+
+    check_sender, check_recver = h.pipe()
+
+    # test abondoned after pause
+    sender, recver = h.pipe()
+
+    @h.spawn
+    def _():
+        pytest.raises(vanilla.Abandoned, recver.recv)
+        check_sender.send('done')
+
+    # sleep so the spawn runs and the recv pauses
+    h.sleep(1)
+    del sender
+    gc.collect()
+    assert check_recver.recv() == 'done'
+
+    # test abondoned before pause
+    sender, recver = h.pipe()
+
+    @h.spawn
+    def _():
+        pytest.raises(vanilla.Abandoned, recver.recv)
+        check_sender.send('done')
+
+    del sender
+    gc.collect()
+    assert check_recver.recv() == 'done'
+
+
 def test_pulse():
     h = vanilla.Hub()
 
