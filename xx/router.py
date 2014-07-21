@@ -69,19 +69,27 @@ class Recver(Pair):
         return self.pause(timeout=timeout)
 
 
-def pipe(hub):
-    sender = Sender(hub)
-    recver = Recver(hub)
+class Hub(vanilla.Hub):
+    def sender(self):
+        return Sender(self)
 
-    sender.pair_to(recver)
-    recver.pair_to(sender)
+    def recver(self):
+        return Recver(self)
 
-    return sender, recver
+    def pipe(self):
+        sender = self.sender()
+        recver = self.recver()
+        sender.pair_to(recver)
+        recver.pair_to(sender)
+        return sender, recver
+
+
+vanilla.Hub = Hub
 
 
 def stream(hub):
     def dec(f):
-        sender, recver = pipe(hub)
+        sender, recver = hub.pipe()
         hub.spawn(f, sender)
         return recver
     return dec
@@ -119,8 +127,8 @@ def buffer(hub, size):
     buff = collections.deque()
 
     # TODO: don't form a closure around sender and recver
-    sender, _recver = pipe(hub)
-    _sender, recver = pipe(hub)
+    sender, _recver = hub.pipe()
+    _sender, recver = hub.pipe()
 
     @hub.spawn
     def _():
@@ -159,9 +167,9 @@ def test_stream():
 def test_select():
     h = vanilla.Hub()
 
-    s1, r1 = pipe(h)
-    s2, r2 = pipe(h)
-    check_s, check_r = pipe(h)
+    s1, r1 = h.pipe()
+    s2, r2 = h.pipe()
+    check_s, check_r = h.pipe()
 
     @h.spawn
     def _():
@@ -187,9 +195,9 @@ def test_select():
 def test_select_timeout():
     h = vanilla.Hub()
 
-    s1, r1 = pipe(h)
-    s2, r2 = pipe(h)
-    check_s, check_r = pipe(h)
+    s1, r1 = h.pipe()
+    s2, r2 = h.pipe()
+    check_s, check_r = h.pipe()
 
     pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=0)
 
@@ -222,8 +230,8 @@ def test_select_timeout():
 def test_timeout():
     h = vanilla.Hub()
 
-    sender, recver = pipe(h)
-    check_sender, check_recver = pipe(h)
+    sender, recver = h.pipe()
+    check_sender, check_recver = h.pipe()
 
     pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
     pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
