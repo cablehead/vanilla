@@ -5,6 +5,8 @@ from vanilla import *
 import weakref
 import gc
 
+import pytest
+
 
 class Pair(object):
     __slots__ = ['hub', 'current', 'pair']
@@ -36,22 +38,24 @@ class Pair(object):
         assert self.current == getcurrent()
         self.current = None
 
-    def pause(self):
+    def pause(self, timeout=-1):
         self.select()
-        _, ret = self.hub.pause()
-        self.unselect()
+        try:
+            _, ret = self.hub.pause(timeout=timeout)
+        finally:
+            self.unselect()
         return ret
 
 
 class Sender(Pair):
-    def send(self, item):
+    def send(self, item, timeout=-1):
         if not self.ready:
-            self.pause()
+            self.pause(timeout=timeout)
         return self.hub.switch_to(self.other, self.pair(), item)
 
 
 class Recver(Pair):
-    def recv(self):
+    def recv(self, timeout=-1):
         # only allow one recv at a time
         assert self.current is None
 
@@ -62,7 +66,7 @@ class Recver(Pair):
             self.current = None
             return ret
 
-        return self.pause()
+        return self.pause(timeout=timeout)
 
 
 def pipe(hub):
@@ -175,6 +179,34 @@ def test_select():
 
     assert check_r.recv() == 20
     assert check_r.recv() == 'done'
+
+
+def test_timeout():
+    h = vanilla.Hub()
+
+    sender, recver = pipe(h)
+    check_sender, check_recver = pipe(h)
+
+    pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
+    pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
+    pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
+
+    @h.spawn
+    def _():
+        h.sleep(20)
+        check_sender.send(recver.recv())
+
+    pytest.raises(vanilla.Timeout, sender.send, 12, timeout=10)
+    sender.send(12, timeout=20)
+    assert check_recver.recv() == 12
+
+    @h.spawn
+    def _():
+        h.sleep(20)
+        sender.send(12)
+
+    pytest.raises(vanilla.Timeout, recver.recv, timeout=10)
+    assert recver.recv(timeout=20) == 12
 
 
 def test_buffer():

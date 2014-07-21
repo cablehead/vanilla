@@ -7,8 +7,6 @@ import gc
 
 
 class Pair(object):
-    __slots__ = ['hub', 'current', 'pair']
-
     def __init__(self, hub):
         self.hub = hub
         self.current = None
@@ -36,6 +34,9 @@ class Sender(Pair):
 
 class Recver(Pair):
     def recv(self):
+        # only allow one recv at a time
+        assert self.current is None
+
         if self.pair().current:
             return self.hub.switch_to(self.pair().current, getcurrent())
 
@@ -47,6 +48,14 @@ class Recver(Pair):
     def __iter__(self):
         while True:
             yield self.recv()
+
+    def pipe(self):
+        sender, recver = pipe(self.hub)
+        @self.hub.spawn
+        def _():
+            for item in self:
+                sender.send(item)
+        return recver
 
     def map(self, f):
         sender, recver = pipe(self.hub)
@@ -88,6 +97,7 @@ def test_stream():
             out.send(i)
 
 
+    """
     @counter.map
     def double(n):
         return n * 2
@@ -96,6 +106,13 @@ def test_stream():
     print double.recv()
     print double.recv()
     print double.recv()
+    """
+
+    ch = counter.pipe()
+    print ch.recv()
+    print ch.recv()
+
+
 
     print
     print
