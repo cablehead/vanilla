@@ -1,6 +1,7 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
 import collections
+import traceback
 import functools
 import mimetypes
 import urlparse
@@ -39,6 +40,10 @@ class Interrupted(Exception):
 
 
 class Closed(Exception):
+    pass
+
+
+class Abandoned(Closed):
     pass
 
 
@@ -990,10 +995,19 @@ class Hub(object):
               is scheduled
         """
         def run_task(task, *a):
-            if isinstance(task, greenlet):
-                task.switch(*a)
-            else:
-                greenlet(task).switch(*a)
+            try:
+                if isinstance(task, greenlet):
+                    task.switch(*a)
+                else:
+                    greenlet(task).switch(*a)
+
+            except Abandoned:
+                traceback.print_exc()
+
+            except Exception:
+                print "WARNING: Exception leaked back to main loop"
+                traceback.print_exc()
+                raise
 
         while True:
             while self.ready:
@@ -1889,7 +1903,6 @@ class HTTPListener(object):
 
         except:
             print "Unexpected failure:"
-            import traceback
             traceback.print_exc()
 
     def stop(self):
