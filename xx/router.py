@@ -96,27 +96,26 @@ class Hub(vanilla.Hub):
                 sender.send(item)
         return _
 
+    def select(self, pairs, timeout=-1):
+        for pair in pairs:
+            if pair.ready:
+                return pair, isinstance(pair, Recver) and pair.recv() or None
+
+        for pair in pairs:
+            pair.select()
+
+        try:
+            fired, item = self.pause(timeout=timeout)
+        finally:
+            for pair in pairs:
+                pair.unselect()
+
+        return fired, item
+
 
 vanilla.Hub = Hub
 
 
-def select(hub, *pairs, **kw):
-    timeout = kw.pop('timeout', -1)
-
-    for pair in pairs:
-        if pair.ready:
-            return pair, isinstance(pair, Recver) and pair.recv() or None
-
-    for pair in pairs:
-        pair.select()
-
-    try:
-        fired, item = hub.pause(timeout=timeout)
-    finally:
-        for pair in pairs:
-            pair.unselect()
-
-    return fired, item
 
 
 def buffer(hub, size):
@@ -135,7 +134,7 @@ def buffer(hub, size):
             if buff:
                 watch.append(_sender)
 
-            ch, item = select(hub, *watch)
+            ch, item = hub.select(watch)
 
             if ch == _recver:
                 buff.append(item)
@@ -193,11 +192,11 @@ def test_select():
         s2.send(10)
         check_s.send('done')
 
-    ch, item = select(h, s1, r2)
+    ch, item = h.select([s1, r2])
     assert ch == s1
     s1.send(20)
 
-    ch, item = select(h, s1, r2)
+    ch, item = h.select([s1, r2])
     assert ch == r2
     assert item == 10
 
@@ -212,16 +211,16 @@ def test_select_timeout():
     s2, r2 = h.pipe()
     check_s, check_r = h.pipe()
 
-    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=0)
+    pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=0)
 
     @h.spawn
     def _():
         h.sleep(20)
         check_s.send(r1.recv())
 
-    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=10)
+    pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
-    ch, item = select(h, s1, r2, timeout=20)
+    ch, item = h.select([s1, r2], timeout=20)
     assert ch == s1
     s1.send(20)
     assert check_r.recv() == 20
@@ -232,9 +231,9 @@ def test_select_timeout():
         s2.send(10)
         check_s.send('done')
 
-    pytest.raises(vanilla.Timeout, select, h, s1, r2, timeout=10)
+    pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
-    ch, item = select(h, s1, r2, timeout=20)
+    ch, item = h.select([s1, r2], timeout=20)
     assert ch == r2
     assert item == 10
     assert check_r.recv() == 'done'
