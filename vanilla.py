@@ -382,6 +382,15 @@ class Hub(object):
         done.recv()
         self.stop()
 
+    def run_task(self, task, *a):
+        try:
+            if isinstance(task, greenlet):
+                task.switch(*a)
+            else:
+                greenlet(task).switch(*a)
+        except Exception, e:
+            self.log.warn('Exception leaked back to main loop', exc_info=e)
+
     def main(self):
         """
         Scheduler steps:
@@ -398,33 +407,25 @@ class Hub(object):
             - epoll on registered, with timeout of next scheduled, if something
               is scheduled
         """
-        def run_task(task, *a):
-            try:
-                if isinstance(task, greenlet):
-                    task.switch(*a)
-                else:
-                    greenlet(task).switch(*a)
-            except Exception, e:
-                self.log.warn('Exception leaked back to main loop', exc_info=e)
 
         while True:
             while self.ready:
                 task, a = self.ready.popleft()
-                run_task(task, *a)
+                self.run_task(task, *a)
 
             if self.scheduled:
                 timeout = self.scheduled.timeout()
                 # run overdue scheduled immediately
                 if timeout < 0:
                     task, a = self.scheduled.pop()
-                    run_task(task, *a)
+                    self.run_task(task, *a)
                     continue
 
                 # if nothing registered, just sleep until next scheduled
                 if not self.registered:
                     time.sleep(timeout)
                     task, a = self.scheduled.pop()
-                    run_task(task, *a)
+                    self.run_task(task, *a)
                     continue
             else:
                 timeout = -1
@@ -447,7 +448,7 @@ class Hub(object):
             if not events:
                 # timeout
                 task, a = self.scheduled.pop()
-                run_task(task, *a)
+                self.run_task(task, *a)
 
             else:
                 for fd, event in events:
