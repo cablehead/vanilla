@@ -1,333 +1,214 @@
-import socket
-import signal
 import time
-import os
-
+import gc
 
 import pytest
-
 
 import vanilla
 
 
-class CheckException(Exception):
-    pass
-
-
-def test_basics():
-    h = vanilla.Hub()
-    a = []
-
-    h.spawn_later(10, lambda: a.append(1))
-    h.spawn(lambda: a.append(2))
-
-    h.sleep(1)
-    assert a == [2]
-
-    h.sleep(10)
-    assert a == [2, 1]
-
-
-def test_Event():
-    h = vanilla.Hub()
-    e = h.event()
-    h.spawn_later(10, e.set)
-    e.wait()
-
-    # assert that new waiters after a clear will block until the next set
-    e.clear()
-    done = h.event()
-
-    @h.spawn
-    def _():
-        e.wait()
-        e.clear().wait()
-        done.set()
-
-    h.sleep(1)
-    e.set()
-    assert not done
-    e.set()
-    assert done
-
-
-def test_preserve_exception():
-    try:
-        raise CheckException('oh hai')
-    except CheckException:
-        e = vanilla.preserve_exception()
-
-    pytest.raises(CheckException, e.reraise)
-
-
-class TestChannel(object):
-    def test_basics(self):
-        # TODO: split this into seperate tests
+class TestHub(object):
+    def test_spawn(self):
         h = vanilla.Hub()
-        c = h.channel()
+        a = []
 
-        # test send before receive
-        c.send('123')
-        assert '123' == c.recv()
+        h.spawn_later(10, lambda: a.append(1))
+        h.spawn(lambda: a.append(2))
 
-        # test receive before send
-        h.spawn_later(10, c.send, '123')
-        assert '123' == c.recv()
+        h.sleep(1)
+        assert a == [2]
 
-        # test timeout
-        h.spawn_later(10, c.send, '123')
-        pytest.raises(vanilla.Timeout, c.recv, timeout=5)
-        assert c.recv(timeout=10) == '123'
+        h.sleep(10)
+        assert a == [2, 1]
 
-        # test preserving exception details
-        try:
-            raise CheckException('oh hai')
-        except:
-            c.throw()
-        pytest.raises(CheckException, c.recv)
 
-        # test pipe
-        @c.pipe
-        def out(c, out):
-            for x in c:
-                if not x % 2:
-                    out.send(x*2)
-
-        # assert exceptions are propogated
-        c.send('123')
-        pytest.raises(TypeError, out.recv)
-
-        # odd numbers are filtered
-        c.send(5)
-        pytest.raises(vanilla.Timeout, out.recv, timeout=0)
-
-        # success
-        c.send(2)
-        assert 4 == out.recv(timeout=0)
-
-        # test closing the channel and channel iteration
-        for i in xrange(10):
-            c.send(i)
-        c.close()
-        assert list(out) == [0, 4, 8, 12, 16]
-
-    def test_size_0(self):
+class TestPiping(object):
+    def test_stream(self):
         h = vanilla.Hub()
-        check = h.channel()
 
-        gate = h.channel(size=0)
+        @h.stream
+        def counter(sender):
+            for i in xrange(10):
+                sender.send(i)
+
+        assert counter.recv() == 0
+        h.sleep(10)
+        assert counter.recv() == 1
+
+    def test_abandoned_sender(self):
+        h = vanilla.Hub()
+
+        check_sender, check_recver = h.pipe()
+
+        # test abondoned after pause
+        sender, recver = h.pipe()
 
         @h.spawn
         def _():
-            for i in xrange(3):
-                gate.send(i)
-                check.send(i)
-            check.send('done')
+            pytest.raises(vanilla.Abandoned, sender.send, 10)
+            check_sender.send('done')
 
-        h.sleep(10)
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+        # sleep so the spawn runs and the send pauses
+        h.sleep(1)
+        del recver
+        gc.collect()
+        assert check_recver.recv() == 'done'
 
-        assert gate.recv() == 0
-        assert check.recv() == 0
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
-
-        assert gate.recv() == 1
-        assert check.recv() == 1
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
-
-        assert gate.recv() == 2
-        assert check.recv() == 2
-        assert check.recv() == 'done'
-
-    def test_size(self):
-        h = vanilla.Hub()
-        check = h.channel()
-
-        gate = h.channel(size=1)
+        # test abondoned before pause
+        sender, recver = h.pipe()
 
         @h.spawn
         def _():
-            for i in xrange(3):
-                gate.send(i)
-                check.send(i)
-            check.send('done')
+            pytest.raises(vanilla.Abandoned, sender.send, 10)
+            check_sender.send('done')
 
-        h.sleep(10)
-        assert check.recv() == 0
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
+        del recver
+        gc.collect()
+        assert check_recver.recv() == 'done'
 
-        assert gate.recv() == 0
-        assert check.recv() == 1
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
-
-        assert gate.recv() == 1
-        assert check.recv() == 2
-        assert check.recv() == 'done'
-        assert gate.recv() == 2
-
-    def test_size_close(self):
-        # close shouldn't be buffered
+    def test_abandoned_recver(self):
         h = vanilla.Hub()
 
-        ch = h.channel(size=1)
+        check_sender, check_recver = h.pipe()
+
+        # test abondoned after pause
+        sender, recver = h.pipe()
 
         @h.spawn
         def _():
-            for i in xrange(3):
-                try:
-                    ch.send(i)
-                except vanilla.Closed:
-                    break
+            pytest.raises(vanilla.Abandoned, recver.recv)
+            check_sender.send('done')
 
-        h.sleep(10)
-        ch.close()
-        assert ch.recv() == 0
-        pytest.raises(vanilla.Closed, ch.recv)
+        # sleep so the spawn runs and the recv pauses
+        h.sleep(1)
+        del sender
+        gc.collect()
+        assert check_recver.recv() == 'done'
+
+        # test abondoned before pause
+        sender, recver = h.pipe()
+
+        @h.spawn
+        def _():
+            pytest.raises(vanilla.Abandoned, recver.recv)
+            check_sender.send('done')
+
+        del sender
+        gc.collect()
+        assert check_recver.recv() == 'done'
 
     def test_pulse(self):
         h = vanilla.Hub()
-        pulse = h.pulse(20)
-        h.sleep(100)
-        pulse.close()
-        assert list(pulse) == [True] * 5
 
-    def test_pulse_size(self):
+        trigger = h.pulse(20)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        h.sleep(20)
+        assert trigger.recv(timeout=0)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        h.sleep(20)
+        assert trigger.recv(timeout=0)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        # TODO: test abandoned
+
+    def test_select(self):
         h = vanilla.Hub()
-        pulse = h.pulse(20, size=1)
-        h.sleep(100)
-        pulse.close()
-        assert list(pulse) == [True] * 1
 
+        s1, r1 = h.pipe()
+        s2, r2 = h.pipe()
+        check_s, check_r = h.pipe()
 
-def test_select():
-    h = vanilla.Hub()
-    c1 = h.channel()
-    c2 = h.channel()
-    check = h.channel()
+        @h.spawn
+        def _():
+            check_s.send(r1.recv())
 
-    def background():
-        while True:
-            try:
-                ch, item = h.select(c1, c2)
-                if ch == c1:
-                    check.send("c1 " + item)
-                    continue
-                if ch == c2:
-                    check.send("c2 " + item)
-                    continue
-            except Exception, e:
-                c1.close()
-                c2.close()
-                check.send(e)
-                break
-    h.spawn(background)
+        @h.spawn
+        def _():
+            s2.send(10)
+            check_s.send('done')
 
-    c1.send("1")
-    h.sleep()
-    c2.send("2")
-    c1.send("3")
+        ch, item = h.select([s1, r2])
+        assert ch == s1
+        s1.send(20)
 
-    assert "c1 1" == check.recv()
-    assert "c2 2" == check.recv()
-    assert "c1 3" == check.recv()
+        ch, item = h.select([s1, r2])
+        assert ch == r2
+        assert item == 10
 
-    # test select cleans up after an exception
-    c1.send(Exception('x'))
-    pytest.raises(Exception, check.recv)
+        assert check_r.recv() == 20
+        assert check_r.recv() == 'done'
 
+    def test_select_timeout(self):
+        h = vanilla.Hub()
 
-def test_select_timeout():
-    h = vanilla.Hub()
-    c = h.channel()
+        s1, r1 = h.pipe()
+        s2, r2 = h.pipe()
+        check_s, check_r = h.pipe()
 
-    @h.spawn
-    def _():
-        while True:
+        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=0)
+
+        @h.spawn
+        def _():
             h.sleep(20)
-            c.send('hi')
+            check_s.send(r1.recv())
 
-    fired, item = h.select(c, timeout=30)
-    assert fired == c and item == 'hi'
+        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
-    pytest.raises(vanilla.Timeout, h.select, c, timeout=5)
+        ch, item = h.select([s1, r2], timeout=20)
+        assert ch == s1
+        s1.send(20)
+        assert check_r.recv() == 20
 
+        @h.spawn
+        def _():
+            h.sleep(20)
+            s2.send(10)
+            check_s.send('done')
 
-def test_Signal():
-    h = vanilla.Hub()
+        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
-    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
+        ch, item = h.select([s1, r2], timeout=20)
+        assert ch == r2
+        assert item == 10
+        assert check_r.recv() == 'done'
 
-    ch1 = h.signal.subscribe(signal.SIGALRM)
-    ch2 = h.signal.subscribe(signal.SIGALRM)
+    def test_timeout(self):
+        h = vanilla.Hub()
 
-    assert ch1.recv() == signal.SIGALRM
-    assert ch2.recv() == signal.SIGALRM
+        sender, recver = h.pipe()
+        check_sender, check_recver = h.pipe()
 
-    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
-    h.signal.unsubscribe(ch1)
+        pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
+        pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
+        pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
 
-    pytest.raises(vanilla.Timeout, ch1.recv, timeout=12)
-    assert ch2.recv() == signal.SIGALRM
+        @h.spawn
+        def _():
+            h.sleep(20)
+            check_sender.send(recver.recv())
 
-    # assert that removing the last listener for a signal cleans up the
-    # registered file descriptor
-    h.signal.unsubscribe(ch2)
-    assert not h.registered
+        pytest.raises(vanilla.Timeout, sender.send, 12, timeout=10)
+        sender.send(12, timeout=20)
+        assert check_recver.recv() == 12
 
+        @h.spawn
+        def _():
+            h.sleep(20)
+            sender.send(12)
 
-def test_INotify(tmpdir):
-    h = vanilla.Hub()
-    inot = h.inotify()
-    ch1 = inot.watch(tmpdir.strpath)
+        pytest.raises(vanilla.Timeout, recver.recv, timeout=10)
+        assert recver.recv(timeout=20) == 12
 
-    fh1 = tmpdir.join('f1').open('w')
-    mask, name = ch1.recv()
-    assert name == 'f1'
-    assert inot.humanize_mask(mask) == ['create']
-    mask, name = ch1.recv()
-    assert name == 'f1'
-    assert inot.humanize_mask(mask) == ['open']
-
-    tmpdir.mkdir('d')
-    mask, name = ch1.recv()
-    assert name == 'd'
-    assert inot.humanize_mask(mask) == ['create', 'is_dir']
-
-    ch2 = inot.watch(tmpdir.join('d').strpath)
-
-    fh2 = tmpdir.join('d', 'f2').open('w')
-    fh2.write('data')
-    fh2.close()
-
-    ch, (mask, name) = h.select(ch1, ch2)
-    assert ch == ch2
-    assert name == 'f2'
-    assert inot.humanize_mask(mask) == ['create']
-
-    ch, (mask, name) = h.select(ch1, ch2)
-    assert ch == ch2
-    assert name == 'f2'
-    assert inot.humanize_mask(mask) == ['open']
-
-    fh1.write('data')
-    fh1.close()
-
-    ch, (mask, name) = h.select(ch1, ch2)
-    assert ch == ch2
-    assert name == 'f2'
-    assert inot.humanize_mask(mask) == ['modify']
-
-    ch, (mask, name) = h.select(ch1, ch2)
-    assert ch == ch2
-    assert name == 'f2'
-    assert inot.humanize_mask(mask) == ['close_write']
-
-    ch, (mask, name) = h.select(ch1, ch2)
-    assert ch == ch1
-    assert name == 'f1'
-    assert inot.humanize_mask(mask) == ['modify']
-
-    h.stop()
+    """
+    def test_buffer(self):
+        h = vanilla.Hub()
+        sender, recver = buffer(h, 2)
+        sender.send(1)
+        sender.send(2)
+        assert recver.recv() == 1
+        assert recver.recv() == 2
+    """
 
 
 def test_lazy():
@@ -340,95 +221,6 @@ def test_lazy():
     want = c.now
     time.sleep(0.01)
     assert c.now == want
-
-
-class TestProcess(object):
-    def test_spawn(self):
-        h = vanilla.Hub()
-
-        def child(code):
-            import sys
-            import vanilla
-            h = vanilla.Hub()
-
-            while True:
-                try:
-                    message = h.stdin.recv_line()
-                    h.stdout.send(message+'\n')
-                except vanilla.Closed:
-                    break
-
-            h.stdout.send('peace.\n')
-            sys.exit(code)
-
-        p = h.process.spawn(child, 220, stdin_out=True)
-
-        p.stdin.send('Hi Toby\n')
-        p.stdin.send('Hi Toby Toby\n')
-
-        assert p.stdout.recv_line() == 'Hi Toby'
-        assert p.stdout.recv_line() == 'Hi Toby Toby'
-
-        p.stdin.close()
-        assert p.stdout.recv_line() == 'peace.'
-
-        p.done.recv()
-        assert p.exitcode == 220
-        assert p.exitsignal == 0
-
-    def test_terminate(self):
-        h = vanilla.Hub()
-
-        def child():
-            import sys
-            import vanilla
-            h = vanilla.Hub()
-            h.stdout.send('ready\n')
-            h.stop_on_term()
-            sys.exit(11)
-
-        p = h.process.spawn(child, stdout=True)
-
-        assert p.stdout.recv_line() == 'ready'
-        assert p.check_liveness()
-        p.terminate()
-        p.done.recv()
-        assert p.exitcode == 11
-        assert p.exitsignal == 0  # the sigterm was caught
-        assert not p.check_liveness()
-
-    def test_execv(self):
-        h = vanilla.Hub()
-
-        p = h.process.execv(
-            ['/bin/grep', '--line-buffered', 'Toby'], stdin_out=True)
-
-        p.stdin.send('Hi toby\n')
-        p.stdin.send('Hi Toby\n')
-        assert p.stdout.recv_line() == 'Hi Toby'
-
-        p.stdin.close()
-        p.done.recv()
-        assert p.exitcode == 0
-        assert p.exitsignal == 0
-
-
-def test_stop():
-    """
-    test that all components cleanly shutdown when the hub is requested to stop
-    """
-    h = vanilla.Hub()
-
-    @h.spawn
-    def _():
-        pytest.raises(vanilla.Stop, h.sleep, 10000)
-
-    signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
-    h.signal.subscribe(signal.SIGALRM)
-
-    h.stop()
-    assert not h.registered
-    assert not h.signal.count
 
 
 def test_Scheduler():
@@ -455,302 +247,3 @@ def test_Scheduler():
 
     assert s.pop() == ('f4', ())
     assert not s
-
-
-def test_TCP():
-    class Echo(object):
-        def __init__(self, hub):
-            self.h = hub
-            self.s = hub.tcp.listen()
-            hub.spawn(self.main)
-            self.closed = 0
-
-        def main(self):
-            while True:
-                conn = self.s.accept.recv()
-                self.h.spawn(self.worker, conn)
-
-        def worker(self, conn):
-            for route, data in conn.serve:
-                conn.reply(route, 'Echo: ' + data)
-            self.closed += 1
-
-    h = vanilla.Hub()
-    echo = Echo(h)
-    c = h.tcp.connect(echo.s.port)
-    assert 'Echo: foo' == c.call('foo').recv()
-
-    # test ping / pong
-    c.ping()
-    c.pong.wait()
-
-    # test connection closing
-    assert echo.closed == 0
-    c.stop()
-    h.sleep(1)
-    assert echo.closed == 1
-
-
-class TestFD(object):
-    def test_halfplex(self):
-        h = vanilla.Hub()
-
-        pipe_r, pipe_w = os.pipe()
-
-        fd_r = vanilla.FD.from_fileno(h, pipe_r)
-        fd_w = vanilla.FD.from_fileno(h, pipe_w)
-
-        fd_w.send('Toby')
-        assert fd_r.recv_bytes(4) == 'Toby'
-
-    def test_duplex(self):
-        h = vanilla.Hub()
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(('127.0.0.1', 0))
-        s.listen(socket.SOMAXCONN)
-
-        port = s.getsockname()[1]
-
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(('127.0.0.1', port))
-        client_fd = vanilla.FD(h, client)
-
-        conn, host = s.accept()
-        conn.setblocking(0)
-        fd = vanilla.FD(h, conn)
-
-        def chunks(l, n):
-            """
-            Yield successive n-sized chunks from l.
-            """
-            for i in xrange(0, len(l), n):
-                yield l[i:i+n]
-
-        @h.spawn
-        def _():
-            for chunk in chunks(('12'*8)+'foo\r\nbar\r\n\r\n', 3):
-                h.sleep(10)
-                client_fd.send(chunk)
-
-        assert fd.recv_bytes(5) == '12121'
-        assert fd.recv_bytes(5) == '21212'
-        assert fd.recv_bytes(5) == '12121'
-        assert fd.recv_partition('\r\n') == '2foo'
-        assert fd.recv_partition('\r\n') == 'bar'
-        assert fd.recv_partition('\r\n') == ''
-
-        # h.stop_on_term()
-
-
-class TestHTTP(object):
-    def test_get_basic(self):
-        h = vanilla.Hub()
-
-        @h.http.listen()
-        def serve(request, response):
-            if len(request.path) > 1:
-                return request.path[1:]
-
-        uri = 'http://localhost:%s' % serve.port
-
-        response = h.http.connect(uri).get('/').recv()
-        assert response.status.code == 200
-        assert response.consume() == ''
-
-        response = h.http.connect(uri).get('/toby').recv()
-        assert response.status.code == 200
-        assert response.consume() == 'toby'
-
-        h.stop()
-
-    def test_get_chunked(self):
-        h = vanilla.Hub()
-
-        @h.http.listen()
-        def serve(request, response):
-            for i in xrange(3):
-                h.sleep(10)
-                response.send(str(i))
-            if len(request.path) > 1:
-                return request.path[1:]
-
-        uri = 'http://localhost:%s' % serve.port
-
-        response = h.http.connect(uri).get('/').recv()
-        assert response.status.code == 200
-        assert list(response.body) == ['0', '1', '2']
-
-        response = h.http.connect(uri).get('/peace').recv()
-        assert response.status.code == 200
-        assert list(response.body) == ['0', '1', '2', 'peace']
-
-        h.stop()
-
-    def test_get_drop(self):
-        h = vanilla.Hub()
-
-        @h.http.listen()
-        def serve(request, response):
-            for i in xrange(3):
-                h.sleep(10)
-                response.send(str(i))
-
-        uri = 'http://localhost:%s' % serve.port
-
-        # test dropping the connection while chunks are being transmitted
-        client = h.http.connect(uri)
-        response = client.get('/c').recv()
-        assert response.status.code == 200
-        client.conn.close()
-        assert response.body.recv() == '0'
-        pytest.raises(vanilla.Interrupted, response.body.recv)
-
-        # test dropping the connection before the request is even initiated
-        client = h.http.connect(uri)
-        client.conn.close()
-        ch = client.get('/c')
-        response = ch.recv
-        pytest.raises(vanilla.Closed, ch.recv)
-
-    def test_websocket(self):
-        h = vanilla.Hub()
-
-        @h.http.listen()
-        def serve(request, response):
-            ws = response.upgrade()
-            while True:
-                item = ws.recv()
-                ws.send(item)
-
-        uri = 'ws://localhost:%s' % serve.port
-        ws = h.http.connect(uri).websocket('/')
-
-        message = 'x' * 125
-        ws.send(message)
-        assert ws.recv() == message
-
-        message = 'x' * 126
-        ws.send(message)
-        assert ws.recv() == message
-
-        message = 'x' * 65535
-        ws.send(message)
-        assert ws.recv() == message
-
-        message = 'x' * 65536
-        ws.send(message)
-        assert ws.recv() == message
-
-        # test we can call select on the websocket
-        message = 'x' * 125
-        ws.send(message)
-        assert h.select(ws) == (ws, message)
-
-    def test_request_timeout(self):
-        h = vanilla.Hub()
-
-        @h.http.listen(request_timeout=20)
-        def serve(request, response):
-            return 'toby'
-
-        uri = 'http://localhost:%s' % serve.port
-
-        client = h.http.connect(uri)
-
-        h.sleep(40)
-        response = client.get('/').recv()
-        assert response.status.code == 200
-        assert response.consume() == 'toby'
-
-
-class TestReactive(object):
-    """
-    experiment with providing a reactive like paradigm to help shape Vanilla's
-    API: https://gist.github.com/staltz/868e7e9bc2a7b8c1f754
-    """
-    def test_clicks(self):
-        h = vanilla.Hub()
-
-        clicks = h.channel()
-        out = (
-            clicks
-            .buffer(clicks.throttle(10))
-            .map(len)
-            .filter(lambda x: x >= 2))
-
-        for i in [15, 5, 15, 15, 5, 5, 15, 15]:
-            clicks.send('click')
-            h.sleep(i)
-
-        assert list(out) == [2, 3]
-
-
-class TestCup(object):
-    def conn(self, app):
-        return app.hub.http.connect('http://localhost:%s' % app.port)
-
-    def test_basic(self):
-        h = vanilla.Hub()
-        app = h.http.cup()
-
-        @app.route('/')
-        def index(request, response):
-            return 'index'
-
-        response = self.conn(app).get('/').recv()
-        assert response.status.code == 200
-        assert response.consume() == 'index'
-
-    def test_method(self):
-        h = vanilla.Hub()
-        app = h.http.cup()
-
-        @app.get('/common')
-        def get(request, response):
-            return request.method
-
-        @app.websocket('/common')
-        def websocket(ws):
-            while True:
-                ws.send(ws.recv())
-
-        conn = self.conn(app)
-        response = conn.get('/common').recv()
-        assert response.status.code == 200
-        assert response.consume() == 'GET'
-
-        conn = self.conn(app)
-        ws = conn.websocket('/common')
-        ws.send('toby')
-        assert ws.recv() == 'toby'
-
-    def test_static(self, tmpdir):
-        fh = tmpdir.join('bar.html').open('w')
-        fh.write('foo')
-        fh.close()
-
-        tmpdir.mkdir('static')
-        fh = tmpdir.join('static', 'foo.html').open('w')
-        fh.write('bar')
-        fh.close()
-
-        h = vanilla.Hub()
-        app = h.http.cup(base_path=tmpdir.strpath)
-        app.static('/', 'bar.html')
-        app.static('/static', 'static')
-
-        response = self.conn(app).get('/').recv()
-        assert response.status.code == 200
-        assert response.headers['Content-Type'] == 'text/html'
-        assert response.consume() == 'foo'
-
-        response = self.conn(app).get('/static/foo.html').recv()
-        assert response.status.code == 200
-        assert response.headers['Content-Type'] == 'text/html'
-        assert response.consume() == 'bar'
-
-        # test 404
-        response = self.conn(app).get('/static/bar.html').recv()
-        assert response.status.code == 404
