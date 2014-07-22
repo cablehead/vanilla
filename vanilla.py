@@ -1,7 +1,6 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
 import collections
-import traceback
 import weakref
 import logging
 import select
@@ -253,6 +252,7 @@ class Hub(object):
     def __init__(self):
         self.ready = collections.deque()
         self.scheduled = Scheduler()
+        self.log = logging.getLogger('%s.%s' % (__name__, self.__class__))
         # self.stopped = self.event()
 
         self.epoll = select.epoll()
@@ -404,14 +404,8 @@ class Hub(object):
                     task.switch(*a)
                 else:
                     greenlet(task).switch(*a)
-
-            except Abandoned:
-                traceback.print_exc()
-
-            except Exception:
-                print "WARNING: Exception leaked back to main loop"
-                traceback.print_exc()
-                raise
+            except Exception, e:
+                self.log.warn('Exception leaked back to main loop', exc_info=e)
 
         while True:
             while self.ready:

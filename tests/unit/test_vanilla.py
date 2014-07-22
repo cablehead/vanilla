@@ -20,6 +20,19 @@ class TestHub(object):
         h.sleep(10)
         assert a == [2, 1]
 
+    def test_exception(self):
+        h = vanilla.Hub()
+
+        def raiser():
+            raise Exception()
+        h.spawn(raiser)
+        h.sleep(1)
+
+        a = []
+        h.spawn(lambda: a.append(2))
+        h.sleep(1)
+        assert a == [2]
+
 
 class TestPiping(object):
     def test_timeout(self):
