@@ -16,6 +16,8 @@ and they had a baby, it might look like Vanilla.*
 
 [![Build Status](https://travis-ci.org/cablehead/vanilla.svg?branch=master)](https://travis-ci.org/cablehead/vanilla)
 
+[![Coverage Status](https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=rehash-pipes)](https://coveralls.io/r/cablehead/vanilla?branch=rehash-pipes)
+
 ## Overview
 
 Vanilla is a fast, concurrent, micro server-library. It's designed to be used
