@@ -4,6 +4,7 @@ import collections
 import weakref
 import logging
 import select
+import socket
 import fcntl
 import heapq
 import cffi
@@ -19,84 +20,6 @@ __version__ = '0.0.1'
 
 
 log = logging.getLogger(__name__)
-
-
-class Timeout(Exception):
-    pass
-
-
-class Halted(Exception):
-    pass
-
-
-class Abandoned(Halted):
-    pass
-
-
-class Pair(object):
-    __slots__ = ['hub', 'current', 'pair']
-
-    def __init__(self, hub):
-        self.hub = hub
-        self.current = None
-        self.pair = None
-
-    def on_abandoned(self, *a, **kw):
-        if self.current:
-            self.hub.throw_to(self.current, Abandoned)
-
-    def pair_to(self, pair):
-        self.pair = weakref.ref(pair, self.on_abandoned)
-
-    @property
-    def other(self):
-        if self.pair() is None:
-            raise Abandoned
-        return self.pair().current
-
-    @property
-    def ready(self):
-        return self.other is not None
-
-    def select(self, current=None):
-        assert self.current is None
-        self.current = current or getcurrent()
-
-    def unselect(self):
-        assert self.current == getcurrent()
-        self.current = None
-
-    def pause(self, timeout=-1):
-        self.select()
-        try:
-            _, ret = self.hub.pause(timeout=timeout)
-        finally:
-            self.unselect()
-        return ret
-
-
-class Sender(Pair):
-    def send(self, item, timeout=-1):
-        # only allow one send at a time
-        assert self.current is None
-        if not self.ready:
-            self.pause(timeout=timeout)
-        return self.hub.switch_to(self.other, self.pair(), item)
-
-
-class Recver(Pair):
-    def recv(self, timeout=-1):
-        # only allow one recv at a time
-        assert self.current is None
-
-        if self.ready:
-            self.current = getcurrent()
-            # switch directly, as we need to pause
-            _, ret = self.other.switch(self.pair(), None)
-            self.current = None
-            return ret
-
-        return self.pause(timeout=timeout)
 
 
 def init_C():
@@ -238,6 +161,172 @@ def init_C():
 C = init_C()
 
 
+class Timeout(Exception):
+    pass
+
+
+class Halted(Exception):
+    pass
+
+
+class Abandoned(Halted):
+    pass
+
+
+class Pair(object):
+    __slots__ = ['hub', 'current', 'pair']
+
+    def __init__(self, hub):
+        self.hub = hub
+        self.current = None
+        self.pair = None
+
+    def on_abandoned(self, *a, **kw):
+        if self.current:
+            self.hub.throw_to(self.current, Abandoned)
+
+    def pair_to(self, pair):
+        self.pair = weakref.ref(pair, self.on_abandoned)
+
+    @property
+    def other(self):
+        if self.pair() is None:
+            raise Abandoned
+        return self.pair().current
+
+    @property
+    def ready(self):
+        return self.other is not None
+
+    def select(self, current=None):
+        assert self.current is None
+        self.current = current or getcurrent()
+
+    def unselect(self):
+        assert self.current == getcurrent()
+        self.current = None
+
+    def pause(self, timeout=-1):
+        self.select()
+        try:
+            _, ret = self.hub.pause(timeout=timeout)
+        finally:
+            self.unselect()
+        return ret
+
+
+class Sender(Pair):
+    def send(self, item, timeout=-1):
+        # only allow one send at a time
+        assert self.current is None
+        if not self.ready:
+            self.pause(timeout=timeout)
+        return self.hub.switch_to(self.other, self.pair(), item)
+
+
+class Recver(Pair):
+    def recv(self, timeout=-1):
+        # only allow one recv at a time
+        assert self.current is None
+
+        if self.ready:
+            self.current = getcurrent()
+            # switch directly, as we need to pause
+            _, ret = self.other.switch(self.pair(), None)
+            self.current = None
+            return ret
+
+        return self.pause(timeout=timeout)
+
+    def __iter__(self):
+        while True:
+            yield self.recv()
+
+
+class Descriptor(object):
+    FLAG_TO_HUMAN = [
+        (C.EPOLLIN, 'in'),
+        (C.EPOLLOUT, 'out'),
+        (C.EPOLLHUP, 'hup'),
+        (C.EPOLLERR, 'err'),
+        (C.EPOLLET, 'et'),
+        (C.EPOLLRDHUP, 'rdhup'), ]
+
+    @staticmethod
+    def humanize_mask(mask):
+        s = []
+        for k, v in Descriptor.FLAG_TO_HUMAN:
+            if k & mask:
+                s.append(v)
+        return s
+
+    def __init__(self, hub, conn):
+        self.hub = hub
+
+        C.unblock(conn.fileno())
+        self.conn = conn
+
+        self.events = self.hub.register(
+            self.conn.fileno(),
+            C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
+            C.EPOLLRDHUP)
+
+        self.recv_sender, self.recv_recver = self.hub.pipe()
+        self.recv_trigger_sender, self.recv_trigger_recver = self.hub.pipe()
+
+        self.hub.spawn(self.reader)
+        self.hub.spawn(self.main)
+
+    def recv(self):
+        return self.recv_recver.recv()
+
+    def reader(self):
+        for _ in self.recv_trigger_recver:
+            while True:
+                try:
+                    self.recv_sender.send(self.conn.recv(4096))
+                except (socket.error, OSError), e:
+                    if e.errno == 11:  # EAGAIN
+                        print 'break'
+                        break
+                    raise
+
+    def main(self):
+        for fileno, event in self.events:
+            print fileno, self.humanize_mask(event)
+            if event & C.EPOLLIN:
+                self.recv_trigger_sender.send(True)
+
+
+class Poll(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def socket(self, conn):
+        return Descriptor(self.hub, conn)
+
+    def fileno(self, fileno):
+        class Adapt(object):
+            def __init__(self, fd):
+                self.fd = fd
+
+            def fileno(self):
+                return self.fd
+
+            def recv(self, n):
+                return os.read(self.fd, n)
+
+            def send(self, data):
+                return os.write(self.fd, data)
+
+            def close(self):
+                try:
+                    os.close(self.fd)
+                except OSError:
+                    pass
+        return Descriptor(self.hub, Adapt(fileno))
+
+
 class lazy(object):
     def __init__(self, f):
         self.f = f
@@ -250,13 +339,17 @@ class lazy(object):
 
 class Hub(object):
     def __init__(self):
+        self.log = logging.getLogger('%s.%s' % (__name__, self.__class__))
+
         self.ready = collections.deque()
         self.scheduled = Scheduler()
-        self.log = logging.getLogger('%s.%s' % (__name__, self.__class__))
+
         # self.stopped = self.event()
 
         self.epoll = select.epoll()
         self.registered = {}
+
+        self.poll = Poll(self)
 
         self.loop = greenlet(self.main)
 
@@ -347,9 +440,12 @@ class Hub(object):
         self.loop.switch()
 
     def register(self, fd, mask):
-        self.registered[fd] = self.channel()
+        # TODO: is it an issue that this will block our epoll if the sender
+        # isn't ready? -- ah, we should only poll on fds that are ready to recv
+        sender, recver = self.pipe()
+        self.registered[fd] = sender
         self.epoll.register(fd, mask)
-        return self.registered[fd]
+        return recver
 
     def unregister(self, fd):
         if fd in self.registered:

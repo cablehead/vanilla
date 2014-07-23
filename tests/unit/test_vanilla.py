@@ -1,4 +1,5 @@
 import time
+import os
 import gc
 
 import pytest
@@ -222,6 +223,22 @@ class TestPiping(object):
         assert recver.recv() == 1
         assert recver.recv() == 2
     """
+
+
+class TestDescriptor(object):
+    def test_core(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+
+        os.write(w, '1')
+        h.sleep(10)
+        assert r.recv() == '1'
+
+        os.write(w, '2')
+        h.sleep(10)
+        assert r.recv() == '2'
 
 
 def test_lazy():
