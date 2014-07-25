@@ -214,16 +214,6 @@ class TestPiping(object):
 
         # TODO: test abandoned
 
-    """
-    def test_buffer(self):
-        h = vanilla.Hub()
-        sender, recver = buffer(h, 2)
-        sender.send(1)
-        sender.send(2)
-        assert recver.recv() == 1
-        assert recver.recv() == 2
-    """
-
 
 class TestDescriptor(object):
     def test_recv_bytes(self):
