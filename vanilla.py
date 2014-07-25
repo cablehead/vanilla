@@ -271,31 +271,83 @@ class Descriptor(object):
             C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
             C.EPOLLRDHUP)
 
-        self.recv_sender, self.recv_recver = self.hub.pipe()
-        self.recv_trigger_sender, self.recv_trigger_recver = self.hub.pipe()
+        # TODO: if this is a read or write only file, don't set up both
+        # directions
+        self.recv_extra = ''
+        self.recv_sender, self.recver = self.hub.pipe()
+        self.sender, self.send_recver = self.hub.pipe()
 
-        self.hub.spawn(self.reader)
+        self.trigger_reader = self.hub.trigger(self.reader)
+        self.trigger_writer = self.hub.trigger(self.writer)
+
         self.hub.spawn(self.main)
 
+    def recv_bytes(self, n, timeout=-1):
+        if n == 0:
+            return ''
+
+        received = len(self.recv_extra)
+        segments = [self.recv_extra]
+        while received < n:
+            segment = self.recver.recv(timeout=timeout)
+            segments.append(segment)
+            received += len(segment)
+
+        # if we've received too much, break the last segment and return the
+        # additional portion to pending
+        overage = received - n
+        if overage:
+            self.recv_extra = segments[-1][-1*(overage):]
+            segments[-1] = segments[-1][:-1*(overage)]
+        else:
+            self.recv_extra = ''
+
+        return ''.join(segments)
+
+    def recv_partition(self, sep, timeout=-1):
+        received = self.recv_extra
+        while True:
+            received += self.recver.recv(timeout=timeout)
+            keep, matched, extra = received.partition(sep)
+            if matched:
+                self.recv_extra = extra
+                return keep
+
     def recv(self):
-        return self.recv_recver.recv()
+        return self.recver.recv()
+
+    def send(self, data):
+        return self.sender.send(data)
 
     def reader(self):
-        for _ in self.recv_trigger_recver:
+        while True:
+            try:
+                self.recv_sender.send(self.conn.recv(4096))
+            except (socket.error, OSError), e:
+                if e.errno == 11:  # EAGAIN
+                    break
+                raise
+
+    def writer(self):
+        for data in self.send_recver:
             while True:
                 try:
-                    self.recv_sender.send(self.conn.recv(4096))
+                    n = self.conn.send(data)
                 except (socket.error, OSError), e:
                     if e.errno == 11:  # EAGAIN
-                        print 'break'
-                        break
+                        raise
                     raise
+                if n == len(data):
+                    break
+                data = data[n:]
 
     def main(self):
         for fileno, event in self.events:
-            print fileno, self.humanize_mask(event)
             if event & C.EPOLLIN:
-                self.recv_trigger_sender.send(True)
+                self.trigger_reader()
+
+            elif event & C.EPOLLOUT:
+                self.trigger_writer()
 
 
 class Poll(object):
@@ -379,6 +431,15 @@ class Hub(object):
                 sender.send(item)
         return _
 
+    def trigger(self, f):
+        sender, recver = self.pipe()
+
+        @self.spawn
+        def _():
+            for item in recver:
+                f()
+        return lambda: sender.send(True)
+
     def select(self, pairs, timeout=-1):
         for pair in pairs:
             if pair.ready:
@@ -400,6 +461,7 @@ class Hub(object):
             item = self.scheduled.add(
                 timeout, getcurrent(), Timeout('timeout: %s' % timeout))
 
+        assert getcurrent() != self.loop, "cannot pause the main loop"
         resume = self.loop.switch()
 
         if timeout > -1:
@@ -443,6 +505,7 @@ class Hub(object):
         # TODO: is it an issue that this will block our epoll if the sender
         # isn't ready? -- ah, we should only poll on fds that are ready to recv
         sender, recver = self.pipe()
+
         self.registered[fd] = sender
         self.epoll.register(fd, mask)
         return recver
@@ -549,7 +612,9 @@ class Hub(object):
             else:
                 for fd, event in events:
                     if fd in self.registered:
-                        self.registered[fd].send((fd, event))
+                        # TODO: rethink this
+                        if self.registered[fd].ready:
+                            self.registered[fd].send((fd, event))
 
 
 class Scheduler(object):

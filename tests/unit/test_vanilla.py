@@ -226,19 +226,31 @@ class TestPiping(object):
 
 
 class TestDescriptor(object):
-    def test_core(self):
+    def test_recv_bytes(self):
         h = vanilla.Hub()
         r, w = os.pipe()
 
         r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
 
-        os.write(w, '1')
-        h.sleep(10)
-        assert r.recv() == '1'
+        w.send('123')
+        assert r.recv_bytes(2) == '12'
 
-        os.write(w, '2')
-        h.sleep(10)
-        assert r.recv() == '2'
+        h.spawn_later(10, w.send, '2')
+        assert r.recv_bytes(2) == '32'
+
+    def test_recv_partition(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
+
+        w.send('12\r\n3')
+        assert r.recv_partition('\r\n') == '12'
+
+        h.spawn_later(10, w.send, '2\r\n')
+        assert r.recv_partition('\r\n') == '32'
 
 
 def test_lazy():
