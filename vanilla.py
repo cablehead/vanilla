@@ -4,13 +4,17 @@ import collections
 import functools
 import urlparse
 import weakref
+import hashlib
 import logging
 import urllib
+import struct
 import select
 import socket
+import base64
 import fcntl
 import heapq
 import cffi
+import uuid
 import time
 import os
 
@@ -391,6 +395,7 @@ class Hub(object):
         sender, recver = self.pipe()
 
         @self.spawn
+        # TODO: damn, pypy is garbage collecting recver
         def _():
             for item in recver:
                 f()
@@ -652,12 +657,19 @@ class Descriptor(object):
     def upgrade(self, klass, *a, **kw):
         self.__class__ = klass
         self.init(*a, **kw)
+        return self
 
-    def recv(self):
+    def _recv(self):
         return self.recver.recv(timeout=self.timeout)
 
-    def send(self, data):
+    def recv(self):
+        return self._recv()
+
+    def _send(self, data):
         return self.sender.send(data)
+
+    def send(self, data):
+        return self._send(data)
 
     def recv_bytes(self, n):
         if n == 0:
@@ -666,7 +678,7 @@ class Descriptor(object):
         received = len(self.recv_extra)
         segments = [self.recv_extra]
         while received < n:
-            segment = self.recv()
+            segment = self._recv()
             segments.append(segment)
             received += len(segment)
 
@@ -688,7 +700,7 @@ class Descriptor(object):
             if matched:
                 self.recv_extra = extra
                 return keep
-            received += self.recv()
+            received += self._recv()
 
     def recv_line(self):
         return self.recv_partition(self.line_break)
@@ -710,6 +722,7 @@ class Descriptor(object):
                 except (socket.error, OSError), e:
                     if e.errno == 11:  # EAGAIN
                         raise
+                    raise
                     return
                 if n == len(data):
                     break
@@ -875,6 +888,10 @@ class HTTPClient(HTTPSocket):
         sender, recver = self.hub.pipe()
         response.send(self.Response(status, headers, recver))
 
+        if headers.get('Connection') == 'Upgrade':
+            sender.close()
+            return
+
         if headers.get('transfer-encoding') == 'chunked':
             while True:
                 chunk = self.recv_chunk()
@@ -925,6 +942,29 @@ class HTTPClient(HTTPSocket):
     def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
         return self.request('GET', path, params, headers, version)
 
+    def websocket(
+            self, path='/', params=None, headers=None, version=HTTP_VERSION):
+
+        key = base64.b64encode(uuid.uuid4().bytes)
+
+        headers = headers or {}
+        headers.update({
+            'Upgrade': 'WebSocket',
+            'Connection': 'Upgrade',
+            'Sec-WebSocket-Key': key,
+            'Sec-WebSocket-Version': 13, })
+
+        response = self.request('GET', path, params, headers, version).recv()
+
+        assert response.status.code == 101
+
+        assert response.headers['Upgrade'].lower() == 'websocket'
+        assert response.headers['Sec-WebSocket-Accept'] == \
+            WebSocket.accept_key(key)
+
+        del self.responses
+        return self.upgrade(WebSocket)
+
 
 class HTTPServer(HTTPSocket):
     Request = collections.namedtuple(
@@ -934,7 +974,6 @@ class HTTPServer(HTTPSocket):
         """
         manages the state of a HTTP Server Response
         """
-
         class HTTPStatus(Exception):
             pass
 
@@ -942,14 +981,15 @@ class HTTPServer(HTTPSocket):
             code = 404
             message = 'Not Found'
 
-        def __init__(self, sender):
+        def __init__(self, socket, request, sender):
+            self.socket = socket
+            self.request = request
             self.sender = sender
 
             self.status = (200, 'OK')
             self.headers = {}
 
             self.is_started = False
-            self.is_upgraded = False
 
         def start(self):
             self.is_started = True
@@ -972,6 +1012,24 @@ class HTTPServer(HTTPSocket):
                     self.sender.send(data)
             self.sender.close()
 
+        def upgrade(self):
+            assert self.request.headers['Connection'].lower() == 'upgrade'
+            assert self.request.headers['Upgrade'].lower() == 'websocket'
+
+            key = self.request.headers['Sec-WebSocket-Key']
+            accept = WebSocket.accept_key(key)
+
+            self.status = (101, 'Switching Protocols')
+            self.headers.update({
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Accept": accept, })
+
+            assert not self.is_started
+            self.start()
+            self.sender.close()
+            return self.socket.upgrade(WebSocket, is_client=False)
+
     def init(self, request_timeout, serve):
         self.timeout = request_timeout
         self.line_break = '\r\n'
@@ -979,11 +1037,12 @@ class HTTPServer(HTTPSocket):
 
         # TODO: handle Connection: close
         # TODO: spawn a green thread this request
+        # TODO: handle when this is a websocket upgrade request
         while True:
             request = self.recv_request()
 
             sender, recver = self.hub.pipe()
-            response = self.Response(sender)
+            response = self.Response(self, request, sender)
             self.responses.send(recver)
 
             data = serve(request, response)
@@ -995,6 +1054,9 @@ class HTTPServer(HTTPSocket):
 
         headers = response.recv()
         self.send_headers(headers)
+
+        if headers.get('Connection') == 'Upgrade':
+            return
 
         if headers.get('Transfer-Encoding') == 'chunked':
             for chunk in response:
@@ -1013,3 +1075,102 @@ class HTTPServer(HTTPSocket):
 
     def send_chunk(self, chunk):
         self.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+
+
+class WebSocket(Descriptor):
+    MASK = FIN = 0b10000000
+    RSV = 0b01110000
+    OP = 0b00001111
+    CONTROL = 0b00001000
+    PAYLOAD = 0b01111111
+
+    OP_TEXT = 0x1
+    OP_BIN = 0x2
+    OP_CLOSE = 0x8
+    OP_PING = 0x9
+    OP_PONG = 0xA
+
+    SANITY = 1024**3  # limit fragments to 1GB
+
+    def init(self, is_client=True):
+        self.is_client = is_client
+        self.timeout = -1
+
+    @staticmethod
+    def mask(mask, s):
+        mask_bytes = [ord(c) for c in mask]
+        return ''.join(
+            chr(mask_bytes[i % 4] ^ ord(c)) for i, c in enumerate(s))
+
+    @staticmethod
+    def accept_key(key):
+        value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        return base64.b64encode(hashlib.sha1(value).digest())
+
+    def recv(self):
+        b1, length, = struct.unpack('!BB', self.recv_bytes(2))
+        assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
+
+        if self.is_client:
+            assert not length & WebSocket.MASK
+        else:
+            assert length & WebSocket.MASK
+            length = length & WebSocket.PAYLOAD
+
+        # TODO: support binary
+        opcode = b1 & WebSocket.OP
+
+        if opcode & WebSocket.CONTROL:
+            # this is a control frame
+            assert length <= 125
+            if opcode == WebSocket.OP_CLOSE:
+                self.recv_bytes(length)
+                raise
+                self.fd.close()
+                raise Closed
+
+        if length == 126:
+            length, = struct.unpack('!H', self.recv_bytes(2))
+
+        elif length == 127:
+            length, = struct.unpack('!Q', self.recv_bytes(8))
+
+        assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
+
+        if self.is_client:
+            return self.recv_bytes(length)
+
+        mask = self.recv_bytes(4)
+        return self.mask(mask, self.recv_bytes(length))
+
+    def send(self, data):
+        length = len(data)
+
+        MASK = WebSocket.MASK if self.is_client else 0
+
+        if length <= 125:
+            header = struct.pack(
+                '!BB',
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                length | MASK)
+
+        elif length <= 65535:
+            header = struct.pack(
+                '!BBH',
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                126 | MASK,
+                length)
+        else:
+            assert length < WebSocket.SANITY, \
+                "Frames limited to 1Gb for sanity"
+            header = struct.pack(
+                '!BBQ',
+                WebSocket.OP_TEXT | WebSocket.FIN,
+                127 | MASK,
+                length)
+
+        if self.is_client:
+            mask = os.urandom(4)
+            self._send(header + mask + self.mask(mask, data))
+        else:
+            self._send(header + data)

@@ -446,3 +446,44 @@ class TestHTTP(object):
 
         # TODO: stop!!, everything needs stop testing
         # h.stop()
+
+
+class TestWebsocket(object):
+    def test_websocket(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            ws = response.upgrade()
+            while True:
+                item = ws.recv()
+                ws.send(item)
+
+        uri = 'ws://localhost:%s' % serve.port
+        ws = h.http.connect(uri).websocket('/')
+
+        import gc
+        gc.collect()
+
+        message = 'x' * 125
+        ws.send(message)
+        assert ws.recv() == message
+
+        message = 'x' * 126
+        ws.send(message)
+        assert ws.recv() == message
+
+        message = 'x' * 65535
+        ws.send(message)
+        assert ws.recv() == message
+
+        message = 'x' * 65536
+        ws.send(message)
+        assert ws.recv() == message
+
+        # test we can call select on the websocket
+        # TODO:
+        return
+        message = 'x' * 125
+        ws.send(message)
+        assert h.select([ws]) == (ws, message)
