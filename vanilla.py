@@ -692,22 +692,11 @@ class Descriptor(object):
 
         self.hub.spawn(self.main)
 
-    def upgrade(self, klass, *a, **kw):
-        self.__class__ = klass
-        self.init(*a, **kw)
-        return self
-
-    def _recv(self):
+    def recv(self):
         return self.recver.recv(timeout=self.timeout)
 
-    def recv(self):
-        return self._recv()
-
-    def _send(self, data):
-        return self.sender.send(data)
-
     def send(self, data):
-        return self._send(data)
+        return self.sender.send(data)
 
     def recv_bytes(self, n):
         if n == 0:
@@ -716,7 +705,7 @@ class Descriptor(object):
         received = len(self.recv_extra)
         segments = [self.recv_extra]
         while received < n:
-            segment = self._recv()
+            segment = self.recv()
             segments.append(segment)
             received += len(segment)
 
@@ -738,7 +727,7 @@ class Descriptor(object):
             if matched:
                 self.recv_extra = extra
                 return keep
-            received += self._recv()
+            received += self.recv()
 
     def recv_line(self):
         return self.recv_partition(self.line_break)
@@ -826,14 +815,7 @@ class HTTP(object):
         self.hub = hub
 
     def connect(self, url):
-        parsed = urlparse.urlsplit(url)
-        assert parsed.query == ''
-        assert parsed.fragment == ''
-        host, port = urllib.splitnport(parsed.netloc, 80)
-
-        conn = self.hub.tcp.connect(host=host, port=port)
-        conn.upgrade(HTTPClient, parsed.netloc)
-        return conn
+        return HTTPClient(self.hub, url)
 
     def listen(
             self,
@@ -842,14 +824,15 @@ class HTTP(object):
             serve=None,
             request_timeout=20000):
 
-        def partial(serve):
-            def upgrade(conn):
-                conn.upgrade(HTTPServer, request_timeout, serve)
-            return self.hub.tcp.listen(host=host, port=port, serve=upgrade)
+        def launch(serve):
+            @self.hub.tcp.listen(host=host, port=port)
+            def server(socket):
+                HTTPServer(self.hub, socket, request_timeout, serve)
+            return server
 
         if serve:
-            return partial(serve)
-        return partial
+            return launch(serve)
+        return launch
 
 
 class Headers(object):
@@ -874,11 +857,12 @@ class Headers(object):
             return default
 
 
-class HTTPSocket(Descriptor):
+class HTTPSocket(object):
+
     def recv_headers(self):
         headers = Headers()
         while True:
-            line = self.recv_line()
+            line = self.socket.recv_line()
             if not line:
                 break
             k, v = line.split(': ', 1)
@@ -888,7 +872,19 @@ class HTTPSocket(Descriptor):
     def send_headers(self, headers):
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in headers.iteritems())
-        self.send(headers+'\r\n'+'\r\n')
+        self.socket.send(headers+'\r\n'+'\r\n')
+
+    def recv_chunk(self):
+        length = int(self.socket.recv_line(), 16)
+        if length:
+            chunk = self.socket.recv_bytes(length)
+        else:
+            chunk = ''
+        assert self.socket.recv_bytes(2) == '\r\n'
+        return chunk
+
+    def send_chunk(self, chunk):
+        self.socket.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
 
 
 class HTTPClient(HTTPSocket):
@@ -904,19 +900,28 @@ class HTTPClient(HTTPSocket):
         def consume(self):
             return ''.join(self.body)
 
-    def init(self, netloc):
+    def __init__(self, hub, url):
+        self.hub = hub
+
+        parsed = urlparse.urlsplit(url)
+        assert parsed.query == ''
+        assert parsed.fragment == ''
+        host, port = urllib.splitnport(parsed.netloc, 80)
+
+        self.socket = self.hub.tcp.connect(host=host, port=port)
+        self.socket.line_break = '\r\n'
+
         self.agent = 'vanilla/%s' % __version__
 
         self.default_headers = dict([
             ('Accept', '*/*'),
             ('User-Agent', self.agent),
-            ('Host', netloc), ])
+            ('Host', parsed.netloc), ])
 
-        self.line_break = '\r\n'
         self.responses = self.hub.consumer(self.reader)
 
     def reader(self, response):
-        version, code, message = self.recv_line().split(' ', 2)
+        version, code, message = self.socket.recv_line().split(' ', 2)
         code = int(code)
         status = self.Status(version, code, message)
         # TODO:
@@ -939,19 +944,10 @@ class HTTPClient(HTTPSocket):
         else:
             # TODO:
             # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-            body = self.recv_bytes(int(headers['content-length']))
+            body = self.socket.recv_bytes(int(headers['content-length']))
             sender.send(body)
 
         sender.close()
-
-    def recv_chunk(self):
-        length = int(self.recv_line(), 16)
-        if length:
-            chunk = self.recv_bytes(length)
-        else:
-            chunk = ''
-        assert self.recv_bytes(2) == '\r\n'
-        return chunk
 
     def request(
             self,
@@ -970,7 +966,7 @@ class HTTPClient(HTTPSocket):
             path += '?' + urllib.urlencode(params)
 
         request = '%s %s %s\r\n' % (method, path, version)
-        self.send(request)
+        self.socket.send(request)
         self.send_headers(request_headers)
 
         sender, recver = self.hub.pipe()
@@ -1000,8 +996,7 @@ class HTTPClient(HTTPSocket):
         assert response.headers['Sec-WebSocket-Accept'] == \
             WebSocket.accept_key(key)
 
-        del self.responses
-        return self.upgrade(WebSocket)
+        return WebSocket(self.hub, self.socket)
 
 
 class HTTPServer(HTTPSocket):
@@ -1019,8 +1014,8 @@ class HTTPServer(HTTPSocket):
             code = 404
             message = 'Not Found'
 
-        def __init__(self, socket, request, sender):
-            self.socket = socket
+        def __init__(self, server, request, sender):
+            self.server = server
             self.request = request
             self.sender = sender
 
@@ -1030,6 +1025,7 @@ class HTTPServer(HTTPSocket):
             self.is_started = False
 
         def start(self):
+            assert not self.is_started
             self.is_started = True
             self.sender.send(self.status)
             self.sender.send(self.headers)
@@ -1063,14 +1059,20 @@ class HTTPServer(HTTPSocket):
                 "Connection": "Upgrade",
                 "Sec-WebSocket-Accept": accept, })
 
-            assert not self.is_started
             self.start()
             self.sender.close()
-            return self.socket.upgrade(WebSocket, is_client=False)
+            return WebSocket(
+                self.server.hub, self.server.socket, is_client=False)
 
-    def init(self, request_timeout, serve):
-        self.timeout = request_timeout
-        self.line_break = '\r\n'
+    def __init__(self, hub, socket, request_timeout, serve):
+        self.hub = hub
+
+        self.socket = socket
+        self.socket.timeout = request_timeout
+        self.socket.line_break = '\r\n'
+
+        self.serve = serve
+
         self.responses = self.hub.consumer(self.writer)
 
         # TODO: handle Connection: close
@@ -1101,21 +1103,18 @@ class HTTPServer(HTTPSocket):
                 self.send_chunk(chunk)
             self.send_chunk('')
         else:
-            self.send(response.recv())
+            self.socket.send(response.recv())
 
     def recv_request(self, timeout=None):
-        method, path, version = self.recv_line().split(' ', 2)
+        method, path, version = self.socket.recv_line().split(' ', 2)
         headers = self.recv_headers()
         return self.Request(method, path, version, headers)
 
     def send_response(self, code, message):
-        self.send('HTTP/1.1 %s %s\r\n' % (code, message))
-
-    def send_chunk(self, chunk):
-        self.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+        self.socket.send('HTTP/1.1 %s %s\r\n' % (code, message))
 
 
-class WebSocket(Descriptor):
+class WebSocket(object):
     MASK = FIN = 0b10000000
     RSV = 0b01110000
     OP = 0b00001111
@@ -1130,9 +1129,11 @@ class WebSocket(Descriptor):
 
     SANITY = 1024**3  # limit fragments to 1GB
 
-    def init(self, is_client=True):
+    def __init__(self, hub, socket, is_client=True):
+        self.hub = hub
+        self.socket = socket
+        self.socket.timeout = -1
         self.is_client = is_client
-        self.timeout = -1
 
     @staticmethod
     def mask(mask, s):
@@ -1146,7 +1147,7 @@ class WebSocket(Descriptor):
         return base64.b64encode(hashlib.sha1(value).digest())
 
     def recv(self):
-        b1, length, = struct.unpack('!BB', self.recv_bytes(2))
+        b1, length, = struct.unpack('!BB', self.socket.recv_bytes(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 
         if self.is_client:
@@ -1162,24 +1163,24 @@ class WebSocket(Descriptor):
             # this is a control frame
             assert length <= 125
             if opcode == WebSocket.OP_CLOSE:
-                self.recv_bytes(length)
+                self.socket.recv_bytes(length)
                 raise
                 self.fd.close()
                 raise Closed
 
         if length == 126:
-            length, = struct.unpack('!H', self.recv_bytes(2))
+            length, = struct.unpack('!H', self.socket.recv_bytes(2))
 
         elif length == 127:
-            length, = struct.unpack('!Q', self.recv_bytes(8))
+            length, = struct.unpack('!Q', self.socket.recv_bytes(8))
 
         assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
 
         if self.is_client:
-            return self.recv_bytes(length)
+            return self.socket.recv_bytes(length)
 
-        mask = self.recv_bytes(4)
-        return self.mask(mask, self.recv_bytes(length))
+        mask = self.socket.recv_bytes(4)
+        return self.mask(mask, self.socket.recv_bytes(length))
 
     def send(self, data):
         length = len(data)
@@ -1209,6 +1210,6 @@ class WebSocket(Descriptor):
 
         if self.is_client:
             mask = os.urandom(4)
-            self._send(header + mask + self.mask(mask, data))
+            self.socket.send(header + mask + self.mask(mask, data))
         else:
-            self._send(header + data)
+            self.socket.send(header + data)
