@@ -1,8 +1,11 @@
 # Organ pipe arrangement of imports; because Guido likes it
 
 import collections
+import functools
+import urlparse
 import weakref
 import logging
+import urllib
 import select
 import socket
 import fcntl
@@ -20,6 +23,22 @@ __version__ = '0.0.1'
 
 
 log = logging.getLogger(__name__)
+
+
+class Timeout(Exception):
+    pass
+
+
+class Halt(Exception):
+    pass
+
+
+class Closed(Halt):
+    pass
+
+
+class Abandoned(Halt):
+    pass
 
 
 def init_C():
@@ -161,25 +180,17 @@ def init_C():
 C = init_C()
 
 
-class Timeout(Exception):
-    pass
-
-
-class Halted(Exception):
-    pass
-
-
-class Abandoned(Halted):
-    pass
+Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
 
 
 class Pair(object):
-    __slots__ = ['hub', 'current', 'pair']
+    __slots__ = ['hub', 'current', 'pair', 'closed']
 
     def __init__(self, hub):
         self.hub = hub
         self.current = None
         self.pair = None
+        self.closed = False
 
     def on_abandoned(self, *a, **kw):
         if self.current:
@@ -190,12 +201,14 @@ class Pair(object):
 
     @property
     def other(self):
-        if self.pair() is None:
-            raise Abandoned
         return self.pair().current
 
     @property
     def ready(self):
+        if self.pair() is None:
+            raise Abandoned
+        if self.pair().closed:
+            raise Closed
         return self.other is not None
 
     def select(self, current=None):
@@ -213,6 +226,11 @@ class Pair(object):
         finally:
             self.unselect()
         return ret
+
+    def close(self):
+        self.closed = True
+        if self.ready:
+            self.hub.throw_to(self.other, Closed)
 
 
 class Sender(Pair):
@@ -240,143 +258,27 @@ class Recver(Pair):
 
     def __iter__(self):
         while True:
-            yield self.recv()
-
-
-class Descriptor(object):
-    FLAG_TO_HUMAN = [
-        (C.EPOLLIN, 'in'),
-        (C.EPOLLOUT, 'out'),
-        (C.EPOLLHUP, 'hup'),
-        (C.EPOLLERR, 'err'),
-        (C.EPOLLET, 'et'),
-        (C.EPOLLRDHUP, 'rdhup'), ]
-
-    @staticmethod
-    def humanize_mask(mask):
-        s = []
-        for k, v in Descriptor.FLAG_TO_HUMAN:
-            if k & mask:
-                s.append(v)
-        return s
-
-    def __init__(self, hub, conn):
-        self.hub = hub
-
-        C.unblock(conn.fileno())
-        self.conn = conn
-
-        self.events = self.hub.register(
-            self.conn.fileno(),
-            C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
-            C.EPOLLRDHUP)
-
-        # TODO: if this is a read or write only file, don't set up both
-        # directions
-        self.recv_extra = ''
-        self.recv_sender, self.recver = self.hub.pipe()
-        self.sender, self.send_recver = self.hub.pipe()
-
-        self.trigger_reader = self.hub.trigger(self.reader)
-        self.trigger_writer = self.hub.trigger(self.writer)
-
-        self.hub.spawn(self.main)
-
-    def recv_bytes(self, n, timeout=-1):
-        if n == 0:
-            return ''
-
-        received = len(self.recv_extra)
-        segments = [self.recv_extra]
-        while received < n:
-            segment = self.recver.recv(timeout=timeout)
-            segments.append(segment)
-            received += len(segment)
-
-        # if we've received too much, break the last segment and return the
-        # additional portion to pending
-        overage = received - n
-        if overage:
-            self.recv_extra = segments[-1][-1*(overage):]
-            segments[-1] = segments[-1][:-1*(overage)]
-        else:
-            self.recv_extra = ''
-
-        return ''.join(segments)
-
-    def recv_partition(self, sep, timeout=-1):
-        received = self.recv_extra
-        while True:
-            received += self.recver.recv(timeout=timeout)
-            keep, matched, extra = received.partition(sep)
-            if matched:
-                self.recv_extra = extra
-                return keep
-
-    def recv(self):
-        return self.recver.recv()
-
-    def send(self, data):
-        return self.sender.send(data)
-
-    def reader(self):
-        while True:
             try:
-                self.recv_sender.send(self.conn.recv(4096))
-            except (socket.error, OSError), e:
-                if e.errno == 11:  # EAGAIN
-                    break
-                raise
-
-    def writer(self):
-        for data in self.send_recver:
-            while True:
-                try:
-                    n = self.conn.send(data)
-                except (socket.error, OSError), e:
-                    if e.errno == 11:  # EAGAIN
-                        raise
-                    raise
-                if n == len(data):
-                    break
-                data = data[n:]
-
-    def main(self):
-        for fileno, event in self.events:
-            if event & C.EPOLLIN:
-                self.trigger_reader()
-
-            elif event & C.EPOLLOUT:
-                self.trigger_writer()
+                yield self.recv()
+            except Halt:
+                break
 
 
-class Poll(object):
+class Broadcast(object):
     def __init__(self, hub):
         self.hub = hub
+        self.subscribers = []
 
-    def socket(self, conn):
-        return Descriptor(self.hub, conn)
+    def send(self, item):
+        # TODO: should we only send to subscribers who are ready?
+        # if not, how is this different to a tee?
+        for subscriber in self.subscribers:
+            subscriber.send(item)
 
-    def fileno(self, fileno):
-        class Adapt(object):
-            def __init__(self, fd):
-                self.fd = fd
-
-            def fileno(self):
-                return self.fd
-
-            def recv(self, n):
-                return os.read(self.fd, n)
-
-            def send(self, data):
-                return os.write(self.fd, data)
-
-            def close(self):
-                try:
-                    os.close(self.fd)
-                except OSError:
-                    pass
-        return Descriptor(self.hub, Adapt(fileno))
+    def subscribe(self):
+        sender, recver = self.hub.pipe()
+        self.subscribers.append(sender)
+        return recver
 
 
 class lazy(object):
@@ -387,6 +289,46 @@ class lazy(object):
         value = self.f(ob)
         setattr(ob, self.f.__name__, value)
         return value
+
+
+class Scheduler(object):
+    Item = collections.namedtuple('Item', ['due', 'action', 'args'])
+
+    def __init__(self):
+        self.count = 0
+        self.queue = []
+        self.removed = {}
+
+    def add(self, delay, action, *args):
+        due = time.time() + (delay / 1000.0)
+        item = self.Item(due, action, args)
+        heapq.heappush(self.queue, item)
+        self.count += 1
+        return item
+
+    def __len__(self):
+        return self.count
+
+    def remove(self, item):
+        self.removed[item] = True
+        self.count -= 1
+
+    def prune(self):
+        while True:
+            if self.queue[0] not in self.removed:
+                break
+            item = heapq.heappop(self.queue)
+            del self.removed[item]
+
+    def timeout(self):
+        self.prune()
+        return self.queue[0].due - time.time()
+
+    def pop(self):
+        self.prune()
+        item = heapq.heappop(self.queue)
+        self.count -= 1
+        return item.action, item.args
 
 
 class Hub(object):
@@ -402,6 +344,8 @@ class Hub(object):
         self.registered = {}
 
         self.poll = Poll(self)
+        self.tcp = TCP(self)
+        self.http = HTTP(self)
 
         self.loop = greenlet(self.main)
 
@@ -416,22 +360,34 @@ class Hub(object):
         recver = self.recver()
         sender.pair_to(recver)
         recver.pair_to(sender)
-        return sender, recver
+        return Pipe(sender, recver)
 
-    def stream(self, f):
+    def producer(self, f):
         sender, recver = self.pipe()
         self.spawn(f, sender)
         return recver
 
     def pulse(self, ms, item=True):
-        @self.stream
+        @self.producer
         def _(sender):
             while True:
                 self.sleep(ms)
                 sender.send(item)
         return _
 
+    def consumer(self, f):
+        # TODO: don't form a closure
+        # TODO: test
+        sender, recver = self.pipe()
+
+        @self.spawn
+        def _():
+            for item in recver:
+                f(item)
+        return sender
+
     def trigger(self, f):
+        # TODO: don't form a closure
         sender, recver = self.pipe()
 
         @self.spawn
@@ -439,6 +395,9 @@ class Hub(object):
             for item in recver:
                 f()
         return lambda: sender.send(True)
+
+    def broadcast(self):
+        return Broadcast(self)
 
     def select(self, pairs, timeout=-1):
         for pair in pairs:
@@ -617,41 +576,438 @@ class Hub(object):
                             self.registered[fd].send((fd, event))
 
 
-class Scheduler(object):
-    Item = collections.namedtuple('Item', ['due', 'action', 'args'])
+class Poll(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def socket(self, conn):
+        return Descriptor(self.hub, conn)
+
+    def fileno(self, fileno):
+        class Adapt(object):
+            def __init__(self, fd):
+                self.fd = fd
+
+            def fileno(self):
+                return self.fd
+
+            def recv(self, n):
+                return os.read(self.fd, n)
+
+            def send(self, data):
+                return os.write(self.fd, data)
+
+            def close(self):
+                try:
+                    os.close(self.fd)
+                except OSError:
+                    pass
+        return Descriptor(self.hub, Adapt(fileno))
+
+
+class Descriptor(object):
+    FLAG_TO_HUMAN = [
+        (C.EPOLLIN, 'in'),
+        (C.EPOLLOUT, 'out'),
+        (C.EPOLLHUP, 'hup'),
+        (C.EPOLLERR, 'err'),
+        (C.EPOLLET, 'et'),
+        (C.EPOLLRDHUP, 'rdhup'), ]
+
+    @staticmethod
+    def humanize_mask(mask):
+        s = []
+        for k, v in Descriptor.FLAG_TO_HUMAN:
+            if k & mask:
+                s.append(v)
+        return s
+
+    def __init__(self, hub, conn):
+        self.hub = hub
+
+        C.unblock(conn.fileno())
+        self.conn = conn
+
+        self.timeout = -1
+        self.line_break = '\n'
+
+        self.events = self.hub.register(
+            self.conn.fileno(),
+            C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
+            C.EPOLLRDHUP)
+
+        # TODO: if this is a read or write only file, don't set up both
+        # directions
+        self.recv_extra = ''
+        self.recv_sender, self.recver = self.hub.pipe()
+        self.sender, self.send_recver = self.hub.pipe()
+
+        self.trigger_reader = self.hub.trigger(self.reader)
+
+        # self.trigger_writer = self.hub.trigger(self.writer)
+        self.hub.spawn(self.writer)
+
+        self.hub.spawn(self.main)
+
+    def upgrade(self, klass, *a, **kw):
+        self.__class__ = klass
+        self.init(*a, **kw)
+
+    def recv(self):
+        return self.recver.recv(timeout=self.timeout)
+
+    def send(self, data):
+        return self.sender.send(data)
+
+    def recv_bytes(self, n):
+        if n == 0:
+            return ''
+
+        received = len(self.recv_extra)
+        segments = [self.recv_extra]
+        while received < n:
+            segment = self.recv()
+            segments.append(segment)
+            received += len(segment)
+
+        # if we've received too much, break the last segment and return the
+        # additional portion to pending
+        overage = received - n
+        if overage:
+            self.recv_extra = segments[-1][-1*(overage):]
+            segments[-1] = segments[-1][:-1*(overage)]
+        else:
+            self.recv_extra = ''
+
+        return ''.join(segments)
+
+    def recv_partition(self, sep):
+        received = self.recv_extra
+        while True:
+            keep, matched, extra = received.partition(sep)
+            if matched:
+                self.recv_extra = extra
+                return keep
+            received += self.recv()
+
+    def recv_line(self):
+        return self.recv_partition(self.line_break)
+
+    def reader(self):
+        while True:
+            try:
+                self.recv_sender.send(self.conn.recv(4096))
+            except (socket.error, OSError), e:
+                if e.errno == 11:  # EAGAIN
+                    break
+                raise
+
+    def writer(self):
+        for data in self.send_recver:
+            while True:
+                try:
+                    n = self.conn.send(data)
+                except (socket.error, OSError), e:
+                    if e.errno == 11:  # EAGAIN
+                        raise
+                    return
+                if n == len(data):
+                    break
+                data = data[n:]
+
+    def main(self):
+        for fileno, event in self.events:
+            if event & C.EPOLLIN:
+                self.trigger_reader()
+
+            elif event & C.EPOLLOUT:
+                # self.trigger_writer()
+                pass
+
+
+class TCP(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def listen(self, port=0, host='127.0.0.1', serve=None):
+        if serve:
+            return TCPListener(self.hub, host, port, serve)
+        return functools.partial(TCPListener, self.hub, host, port)
+
+    def connect(self, port, host='127.0.0.1'):
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((host, port))
+        return self.hub.poll.socket(conn)
+
+
+class TCPListener(object):
+    def __init__(self, hub, host, port, serve):
+        self.hub = hub
+
+        self.sock = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+        s.listen(socket.SOMAXCONN)
+        s.setblocking(0)
+
+        self.port = s.getsockname()[1]
+        self.serve = serve
+
+        hub.spawn(self.accept)
+
+    def accept(self):
+        ready = self.hub.register(self.sock.fileno(), C.EPOLLIN)
+        while True:
+            ready.recv()
+            conn, host = self.sock.accept()
+            conn = self.hub.poll.socket(conn)
+            self.hub.spawn(self.serve, conn)
+
+
+# HTTP #####################################################################
+
+
+HTTP_VERSION = 'HTTP/1.1'
+
+
+class HTTP(object):
+    def __init__(self, hub):
+        self.hub = hub
+
+    def connect(self, url):
+        parsed = urlparse.urlsplit(url)
+        assert parsed.query == ''
+        assert parsed.fragment == ''
+        host, port = urllib.splitnport(parsed.netloc, 80)
+
+        conn = self.hub.tcp.connect(host=host, port=port)
+        conn.upgrade(HTTPClient, parsed.netloc)
+        return conn
+
+    def listen(
+            self,
+            port=0,
+            host='127.0.0.1',
+            serve=None,
+            request_timeout=20000):
+
+        def partial(serve):
+            def upgrade(conn):
+                conn.upgrade(HTTPServer, request_timeout, serve)
+            return self.hub.tcp.listen(host=host, port=port, serve=upgrade)
+
+        if serve:
+            return partial(serve)
+        return partial
+
+
+class Headers(object):
+    Value = collections.namedtuple('Value', ['key', 'value'])
 
     def __init__(self):
-        self.count = 0
-        self.queue = []
-        self.removed = {}
+        self.store = {}
 
-    def add(self, delay, action, *args):
-        due = time.time() + (delay / 1000.0)
-        item = self.Item(due, action, args)
-        heapq.heappush(self.queue, item)
-        self.count += 1
-        return item
+    def __setitem__(self, key, value):
+        self.store[key.lower()] = self.Value(key, value)
 
-    def __len__(self):
-        return self.count
+    def __getitem__(self, key):
+        return self.store[key.lower()].value
 
-    def remove(self, item):
-        self.removed[item] = True
-        self.count -= 1
+    def __repr__(self):
+        return repr(dict(self.store.itervalues()))
 
-    def prune(self):
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+class HTTPSocket(Descriptor):
+    def recv_headers(self):
+        headers = Headers()
         while True:
-            if self.queue[0] not in self.removed:
+            line = self.recv_line()
+            if not line:
                 break
-            item = heapq.heappop(self.queue)
-            del self.removed[item]
+            k, v = line.split(': ', 1)
+            headers[k] = v.strip()
+        return headers
 
-    def timeout(self):
-        self.prune()
-        return self.queue[0].due - time.time()
+    def send_headers(self, headers):
+        headers = '\r\n'.join(
+            '%s: %s' % (k, v) for k, v in headers.iteritems())
+        self.send(headers+'\r\n'+'\r\n')
 
-    def pop(self):
-        self.prune()
-        item = heapq.heappop(self.queue)
-        self.count -= 1
-        return item.action, item.args
+
+class HTTPClient(HTTPSocket):
+
+    Status = collections.namedtuple('Status', ['version', 'code', 'message'])
+
+    class Response(object):
+        def __init__(self, status, headers, body):
+            self.status = status
+            self.headers = headers
+            self.body = body
+
+        def consume(self):
+            return ''.join(self.body)
+
+    def init(self, netloc):
+        self.agent = 'vanilla/%s' % __version__
+
+        self.default_headers = dict([
+            ('Accept', '*/*'),
+            ('User-Agent', self.agent),
+            ('Host', netloc), ])
+
+        self.line_break = '\r\n'
+        self.responses = self.hub.consumer(self.reader)
+
+    def reader(self, response):
+        version, code, message = self.recv_line().split(' ', 2)
+        code = int(code)
+        status = self.Status(version, code, message)
+        # TODO:
+        # if status.code == 408:
+
+        headers = self.recv_headers()
+        sender, recver = self.hub.pipe()
+        response.send(self.Response(status, headers, recver))
+
+        if headers.get('transfer-encoding') == 'chunked':
+            while True:
+                chunk = self.recv_chunk()
+                if not chunk:
+                    break
+                sender.send(chunk)
+        else:
+            # TODO:
+            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
+            body = self.recv_bytes(int(headers['content-length']))
+            sender.send(body)
+
+        sender.close()
+
+    def recv_chunk(self):
+        length = int(self.recv_line(), 16)
+        if length:
+            chunk = self.recv_bytes(length)
+        else:
+            chunk = ''
+        assert self.recv_bytes(2) == '\r\n'
+        return chunk
+
+    def request(
+            self,
+            method,
+            path='/',
+            params=None,
+            headers=None,
+            version=HTTP_VERSION):
+
+        request_headers = {}
+        request_headers.update(self.default_headers)
+        if headers:
+            request_headers.update(headers)
+
+        if params:
+            path += '?' + urllib.urlencode(params)
+
+        request = '%s %s %s\r\n' % (method, path, version)
+        self.send(request)
+        self.send_headers(request_headers)
+
+        sender, recver = self.hub.pipe()
+        self.responses.send(sender)
+        return recver
+
+    def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
+        return self.request('GET', path, params, headers, version)
+
+
+class HTTPServer(HTTPSocket):
+    Request = collections.namedtuple(
+        'Request', ['method', 'path', 'version', 'headers'])
+
+    class Response(object):
+        """
+        manages the state of a HTTP Server Response
+        """
+
+        class HTTPStatus(Exception):
+            pass
+
+        class HTTP404(HTTPStatus):
+            code = 404
+            message = 'Not Found'
+
+        def __init__(self, sender):
+            self.sender = sender
+
+            self.status = (200, 'OK')
+            self.headers = {}
+
+            self.is_started = False
+            self.is_upgraded = False
+
+        def start(self):
+            self.is_started = True
+            self.sender.send(self.status)
+            self.sender.send(self.headers)
+
+        def send(self, data):
+            if not self.is_started:
+                self.headers['Transfer-Encoding'] = 'chunked'
+                self.start()
+            self.sender.send(data)
+
+        def end(self, data):
+            if not self.is_started:
+                self.headers['Content-Length'] = len(data)
+                self.start()
+                self.sender.send(data or '')
+            else:
+                if data:
+                    self.sender.send(data)
+            self.sender.close()
+
+    def init(self, request_timeout, serve):
+        self.timeout = request_timeout
+        self.line_break = '\r\n'
+        self.responses = self.hub.consumer(self.writer)
+
+        while True:
+            request = self.recv_request()
+
+            sender, recver = self.hub.pipe()
+            response = self.Response(sender)
+            self.responses.send(recver)
+
+            data = serve(request, response)
+            response.end(data)
+
+    def writer(self, response):
+        code, message = response.recv()
+        self.send_response(code, message)
+
+        headers = response.recv()
+        self.send_headers(headers)
+
+        if headers.get('Transfer-Encoding') == 'chunked':
+            for chunk in response:
+                self.send_chunk(chunk)
+            self.send_chunk('')
+        else:
+            self.send(response.recv())
+
+    def recv_request(self, timeout=None):
+        method, path, version = self.recv_line().split(' ', 2)
+        headers = self.recv_headers()
+        return self.Request(method, path, version, headers)
+
+    def send_response(self, code, message):
+        self.send('HTTP/1.1 %s %s\r\n' % (code, message))
+
+    def send_chunk(self, chunk):
+        self.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
