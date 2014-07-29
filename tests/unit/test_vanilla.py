@@ -1,4 +1,3 @@
-import platform
 import time
 import os
 import gc
@@ -297,6 +296,31 @@ class TestPipe(object):
 
         # TODO: test abandoned
 
+    def test_trigger(self):
+        h = vanilla.Hub()
+
+        check = h.pipe()
+
+        @h.trigger
+        def go():
+            check.sender.send(1)
+
+        h.sleep(1)
+        gc.collect()
+
+        go.trigger()
+        assert check.recver.recv() == 1
+
+        pipe = go.pipe
+
+        h.sleep(1)
+        del go
+        gc.collect()
+        gc.collect()
+
+        assert pipe.recver() is None
+        assert pipe.sender() is None
+
 
 class TestBroadcast(object):
     def test_broadcast(self):
@@ -450,10 +474,6 @@ class TestHTTP(object):
 
 
 class TestWebsocket(object):
-
-    @pytest.mark.skipif(
-        platform.python_implementation() == 'PyPy',
-        reason='looks to be a garbage collect issue with PyPy')
     def test_websocket(self):
         h = vanilla.Hub()
 
@@ -467,7 +487,6 @@ class TestWebsocket(object):
         uri = 'ws://localhost:%s' % serve.port
         ws = h.http.connect(uri).websocket('/')
 
-        import gc
         gc.collect()
 
         message = 'x' * 125

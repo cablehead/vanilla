@@ -99,4 +99,3 @@
     - read socket, stream of -> instreamer, outstreamer
         - send to instreamer until content
     - recv outstreams -> drain to socket
-

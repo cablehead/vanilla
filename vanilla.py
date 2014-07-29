@@ -187,33 +187,45 @@ C = init_C()
 Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
 
 
-class Pair(object):
-    __slots__ = ['hub', 'current', 'pair', 'closed']
+class _Pipe(object):
+    __slots__ = [
+        'hub', 'recver', 'recver_current', 'sender', 'sender_current',
+        'closed']
 
-    def __init__(self, hub):
+    def __new__(cls, hub):
+        self = super(_Pipe, cls).__new__(cls)
         self.hub = hub
-        self.current = None
-        self.pair = None
         self.closed = False
 
+        recver = Recver(self)
+        self.recver = weakref.ref(recver, self.on_abandoned)
+        self.recver_current = None
+
+        sender = Sender(self)
+        self.sender = weakref.ref(sender, self.on_abandoned)
+        self.sender_current = None
+
+        return Pipe(sender, recver)
+
     def on_abandoned(self, *a, **kw):
-        if self.current:
-            self.hub.throw_to(self.current, Abandoned)
+        current = self.recver_current or self.sender_current
+        if current:
+            self.hub.throw_to(current, Abandoned)
 
-    def pair_to(self, pair):
-        self.pair = weakref.ref(pair, self.on_abandoned)
 
-    @property
-    def other(self):
-        return self.pair().current
+class End(object):
+    __slots__ = ['pipe']
+
+    def __init__(self, pipe):
+        self.pipe = pipe
 
     @property
     def ready(self):
-        if self.pair() is None:
-            raise Abandoned
-        if self.pair().closed:
+        if self.pipe.closed:
             raise Closed
-        return self.other is not None
+        if self.other is None:
+            raise Abandoned
+        return self.other_current is not None
 
     def select(self, current=None):
         assert self.current is None
@@ -226,27 +238,59 @@ class Pair(object):
     def pause(self, timeout=-1):
         self.select()
         try:
-            _, ret = self.hub.pause(timeout=timeout)
+            _, ret = self.pipe.hub.pause(timeout=timeout)
         finally:
             self.unselect()
         return ret
 
     def close(self):
-        self.closed = True
         if self.ready:
-            self.hub.throw_to(self.other, Closed)
+            self.pipe.hub.throw_to(self.other_current, Closed)
+        self.pipe.closed = True
 
 
-class Sender(Pair):
+class Sender(End):
+    @property
+    def current(self):
+        return self.pipe.sender_current
+
+    @current.setter
+    def current(self, value):
+        self.pipe.sender_current = value
+
+    @property
+    def other(self):
+        return self.pipe.recver()
+
+    @property
+    def other_current(self):
+        return self.pipe.recver_current
+
     def send(self, item, timeout=-1):
         # only allow one send at a time
         assert self.current is None
         if not self.ready:
             self.pause(timeout=timeout)
-        return self.hub.switch_to(self.other, self.pair(), item)
+        return self.pipe.hub.switch_to(self.other_current, self.other, item)
 
 
-class Recver(Pair):
+class Recver(End):
+    @property
+    def current(self):
+        return self.pipe.recver_current
+
+    @current.setter
+    def current(self, value):
+        self.pipe.recver_current = value
+
+    @property
+    def other(self):
+        return self.pipe.sender()
+
+    @property
+    def other_current(self):
+        return self.pipe.sender_current
+
     def recv(self, timeout=-1):
         # only allow one recv at a time
         assert self.current is None
@@ -254,7 +298,7 @@ class Recver(Pair):
         if self.ready:
             self.current = getcurrent()
             # switch directly, as we need to pause
-            _, ret = self.other.switch(self.pair(), None)
+            _, ret = self.other_current.switch(self.other, None)
             self.current = None
             return ret
 
@@ -360,11 +404,7 @@ class Hub(object):
         return Recver(self)
 
     def pipe(self):
-        sender = self.sender()
-        recver = self.recver()
-        sender.pair_to(recver)
-        recver.pair_to(sender)
-        return Pipe(sender, recver)
+        return _Pipe(self)
 
     def producer(self, f):
         sender, recver = self.pipe()
@@ -391,15 +431,13 @@ class Hub(object):
         return sender
 
     def trigger(self, f):
-        # TODO: don't form a closure
-        sender, recver = self.pipe()
-
-        @self.spawn
-        # TODO: damn, pypy is garbage collecting recver
-        def _():
+        def consume(recver, f):
             for item in recver:
                 f()
-        return lambda: sender.send(True)
+        sender, recver = self.pipe()
+        self.spawn(consume, recver, f)
+        sender.trigger = functools.partial(sender.send, True)
+        return sender
 
     def broadcast(self):
         return Broadcast(self)
@@ -731,7 +769,7 @@ class Descriptor(object):
     def main(self):
         for fileno, event in self.events:
             if event & C.EPOLLIN:
-                self.trigger_reader()
+                self.trigger_reader.trigger()
 
             elif event & C.EPOLLOUT:
                 # self.trigger_writer()
