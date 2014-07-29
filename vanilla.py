@@ -977,6 +977,8 @@ class HTTPServer(HTTPSocket):
         self.line_break = '\r\n'
         self.responses = self.hub.consumer(self.writer)
 
+        # TODO: handle Connection: close
+        # TODO: spawn a green thread this request
         while True:
             request = self.recv_request()
 
