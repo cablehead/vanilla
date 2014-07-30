@@ -506,8 +506,6 @@ class TestWebsocket(object):
         assert ws.recv() == message
 
         # test we can call select on the websocket
-        # TODO:
-        return
         message = 'x' * 125
         ws.send(message)
-        assert h.select([ws]) == (ws, message)
+        assert h.select([ws.recver]) == (ws.recver, message)

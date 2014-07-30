@@ -1128,6 +1128,7 @@ class WebSocket(object):
         self.socket = socket
         self.socket.timeout = -1
         self.is_client = is_client
+        self.recver = self.hub.producer(self.reader)
 
     @staticmethod
     def mask(mask, s):
@@ -1140,7 +1141,14 @@ class WebSocket(object):
         value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
         return base64.b64encode(hashlib.sha1(value).digest())
 
+    def reader(self, sender):
+        while True:
+            sender.send(self._recv())
+
     def recv(self):
+        return self.recver.recv()
+
+    def _recv(self):
         b1, length, = struct.unpack('!BB', self.socket.recv_bytes(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 
