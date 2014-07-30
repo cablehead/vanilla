@@ -472,6 +472,17 @@ class TestHTTP(object):
         # TODO: stop!!, everything needs stop testing
         # h.stop()
 
+    def test_404(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            raise response.HTTP404
+
+        uri = 'http://localhost:%s' % serve.port
+        response = h.http.connect(uri).get('/').recv()
+        assert response.status.code == 404
+
 
 class TestWebsocket(object):
     def test_websocket(self):
@@ -509,3 +520,72 @@ class TestWebsocket(object):
         message = 'x' * 125
         ws.send(message)
         assert h.select([ws.recver]) == (ws.recver, message)
+
+
+class TestBean(object):
+    def conn(self, app):
+        return app.hub.http.connect('http://localhost:%s' % app.port)
+
+    def test_basic(self):
+        h = vanilla.Hub()
+        app = h.http.bean()
+
+        @app.route('/')
+        def index(request, response):
+            return 'index'
+
+        response = self.conn(app).get('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'index'
+
+    def test_method(self):
+        h = vanilla.Hub()
+        app = h.http.bean()
+
+        @app.get('/common')
+        def get(request, response):
+            return request.method
+
+        @app.websocket('/common')
+        def websocket(ws):
+            while True:
+                ws.send(ws.recv())
+
+        conn = self.conn(app)
+        response = conn.get('/common').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'GET'
+
+        conn = self.conn(app)
+        ws = conn.websocket('/common')
+        ws.send('toby')
+        assert ws.recv() == 'toby'
+
+    def test_static(self, tmpdir):
+        fh = tmpdir.join('bar.html').open('w')
+        fh.write('foo')
+        fh.close()
+
+        tmpdir.mkdir('static')
+        fh = tmpdir.join('static', 'foo.html').open('w')
+        fh.write('bar')
+        fh.close()
+
+        h = vanilla.Hub()
+        app = h.http.bean(base_path=tmpdir.strpath)
+        app.static('/', 'bar.html')
+        app.static('/static', 'static')
+
+        response = self.conn(app).get('/').recv()
+        assert response.status.code == 200
+        assert response.headers['Content-Type'] == 'text/html'
+        assert response.consume() == 'foo'
+
+        response = self.conn(app).get('/static/foo.html').recv()
+        assert response.status.code == 200
+        assert response.headers['Content-Type'] == 'text/html'
+        assert response.consume() == 'bar'
+
+        # test 404
+        response = self.conn(app).get('/static/bar.html').recv()
+        assert response.status.code == 404
