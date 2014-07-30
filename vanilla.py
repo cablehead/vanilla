@@ -1238,7 +1238,7 @@ class HTTPBean(object):
     """
     Obligatory Sintra style micro-web framework
 
-    TODO: all of HTTP should go into it's of module, but in-particular this
+    TODO: all of HTTP should go into it's own module, but in-particular this
     *really* should!
     """
     def __init__(self, hub, host, port, base_path, request_timeout):
