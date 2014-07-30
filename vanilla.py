@@ -397,12 +397,6 @@ class Hub(object):
 
         self.loop = greenlet(self.main)
 
-    def sender(self):
-        return Sender(self)
-
-    def recver(self):
-        return Recver(self)
-
     def pipe(self):
         return _Pipe(self)
 
