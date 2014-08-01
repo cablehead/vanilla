@@ -322,9 +322,42 @@ class TestPipe(object):
         assert pipe.sender() is None
 
 
+class TestBuff(object):
+    def test_buff(self):
+        h = vanilla.Hub()
+        b = h.buff(2)
+
+        b.sender.send(1, timeout=0)
+        b.sender.send(2, timeout=0)
+        pytest.raises(vanilla.Timeout, b.sender.send, 3, timeout=0)
+        assert b.recver.recv() == 1
+
+        b.sender.send(3, timeout=0)
+        assert b.recver.recv() == 2
+        assert b.recver.recv() == 3
+
+        gc.collect()
+        h.sleep(1)
+
+    def test_buff_close_sender(self):
+        h = vanilla.Hub()
+        sender, recver = h.buff(2)
+
+        sender.send(1, timeout=0)
+        sender.send(2, timeout=0)
+
+        del sender
+        gc.collect()
+
+        assert recver.recv() == 1
+        assert recver.recv() == 2
+
+        gc.collect()
+        h.sleep(1)
+
+
 class TestBroadcast(object):
     def test_broadcast(self):
-        # TODO:
         return
         print
         print

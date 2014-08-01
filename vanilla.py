@@ -221,6 +221,10 @@ class End(object):
         self.pipe = pipe
 
     @property
+    def halted(self):
+        return bool(self.pipe.closed or self.other is None)
+
+    @property
     def ready(self):
         if self.pipe.closed:
             raise Closed
@@ -245,7 +249,7 @@ class End(object):
         return ret
 
     def close(self):
-        if self.ready:
+        if self.other is not None and self.other_current is not None:
             self.pipe.hub.throw_to(self.other_current, Closed)
         self.pipe.closed = True
 
@@ -311,6 +315,48 @@ class Recver(End):
                 yield self.recv()
             except Halt:
                 break
+
+
+def buff(hub, size):
+    buff = collections.deque()
+
+    def main(recver, sender, size):
+        while True:
+            watch = []
+
+            if sender.halted:
+                # no one is listening to our output, so shutdown
+                recver.close()
+                return
+
+            if buff:
+                watch.append(sender)
+
+            else:
+                # no point continuing with an empty buffer unless there's input
+                if recver.halted:
+                    sender.close()
+                    return
+
+            if not recver.halted and len(buff) < size:
+                watch.append(recver)
+
+            try:
+                ch, item = hub.select(watch)
+            except Halt:
+                continue
+
+            if ch == recver:
+                buff.append(item)
+
+            elif ch == sender:
+                item = buff.popleft()
+                sender.send(item)
+
+    in_ = hub.pipe()
+    out = hub.pipe()
+    hub.spawn(main, in_.recver, out.sender, size)
+    return Pipe(in_.sender, out.recver)
 
 
 class Broadcast(object):
@@ -433,6 +479,9 @@ class Hub(object):
         self.spawn(consume, recver, f)
         sender.trigger = functools.partial(sender.send, True)
         return sender
+
+    def buff(self, size):
+        return buff(self, size)
 
     def broadcast(self):
         return Broadcast(self)
