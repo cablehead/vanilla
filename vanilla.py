@@ -365,15 +365,17 @@ class Broadcast(object):
         self.subscribers = []
 
     def send(self, item):
-        # TODO: should we only send to subscribers who are ready?
-        # if not, how is this different to a tee?
         for subscriber in self.subscribers:
-            subscriber.send(item)
+            if subscriber.ready:
+                subscriber.send(item)
 
     def subscribe(self):
         sender, recver = self.hub.pipe()
         self.subscribers.append(sender)
         return recver
+
+    def unsubscribe(self, recver):
+        self.subscribers = [x for x in self.subscribers if x.other != recver]
 
 
 class lazy(object):

@@ -358,32 +358,34 @@ class TestBuff(object):
 
 class TestBroadcast(object):
     def test_broadcast(self):
-        return
-        print
-        print
         h = vanilla.Hub()
 
-        check = h.pipe()
         b = h.broadcast()
+        check = h.buff(10)
 
-        print
-        print
-
-        def subscriber(name):
-            print "START", name
-            s = b.subscribe()
+        def subscriber(s, name):
             for item in s:
-                print "ITEM", item
                 check.sender.send((name, item))
 
-        h.spawn(subscriber, 's1')
-        h.spawn(subscriber, 's2')
+        s1 = b.subscribe()
+        s2 = b.subscribe()
+
+        h.spawn(subscriber, s1, 's1')
+        h.spawn(subscriber, s2, 's2')
         h.sleep(1)
 
         b.send(1)
-        print check.recver.recv()
-        return
-        print check.recver.recv()
+        assert check.recver.recv() == ('s1', 1)
+        assert check.recver.recv() == ('s2', 1)
+
+        b.send(2)
+        assert check.recver.recv() == ('s1', 2)
+        assert check.recver.recv() == ('s2', 2)
+
+        b.unsubscribe(s1)
+        b.send(3)
+        assert check.recver.recv() == ('s2', 3)
+        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
 
 
 class TestDescriptor(object):
