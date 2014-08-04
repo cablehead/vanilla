@@ -543,6 +543,23 @@ class TestDescriptor(object):
         assert r.recv_bytes(1) == '3'
         pytest.raises(vanilla.Closed, r.recv)
 
+    def test_close_write(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
+
+        w.send('123')
+        assert r.recv_bytes(2) == '12'
+
+        os.close(w.conn.fileno())
+        w.send('2')
+        pytest.raises(vanilla.Closed, w.send, '3')
+
+        assert r.recv_bytes(1) == '3'
+        pytest.raises(vanilla.Closed, r.recv)
+
 
 class TestSignal(object):
     def test_signal(self):

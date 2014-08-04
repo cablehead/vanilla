@@ -868,12 +868,16 @@ class Descriptor(object):
     def reader(self):
         while True:
             try:
-                self.recv_sender.send(self.conn.recv(4096))
+                data = self.conn.recv(4096)
             except (socket.error, OSError), e:
                 if e.errno == 11:  # EAGAIN
                     break
                 self.recv_sender.close()
                 return
+            if not data:
+                self.recv_sender.close()
+                return
+            self.recv_sender.send(data)
 
     def writer(self):
         for data in self.send_recver:
