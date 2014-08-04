@@ -397,17 +397,22 @@ class Broadcast(object):
         self.subscribers = []
 
     def send(self, item):
+        to_remove = None
         for subscriber in self.subscribers:
-            if subscriber.ready:
-                subscriber.send(item)
+            try:
+                if subscriber.ready:
+                    subscriber.send(item)
+            except Halt:
+                to_remove = to_remove or []
+                to_remove.append(subscriber)
+        if to_remove:
+            self.subscribers = [
+                x for x in self.subscribers if x not in to_remove]
 
     def subscribe(self):
         sender, recver = self.hub.pipe()
         self.subscribers.append(sender)
         return recver
-
-    def unsubscribe(self, recver):
-        self.subscribers = [x for x in self.subscribers if x.other != recver]
 
     # TODO: this seems like a common pattern
     def connect(self, recver):

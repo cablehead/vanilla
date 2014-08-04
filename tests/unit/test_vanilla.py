@@ -425,7 +425,7 @@ class TestBroadcast(object):
         assert check.recver.recv() == ('s1', 2)
         assert check.recver.recv() == ('s2', 2)
 
-        b.unsubscribe(s1)
+        s1.close()
         b.send(3)
         assert check.recver.recv() == ('s2', 3)
         pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
