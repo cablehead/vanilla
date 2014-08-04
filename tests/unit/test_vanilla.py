@@ -511,6 +511,7 @@ class TestDescriptor(object):
 
         h.spawn_later(10, w.send, '2')
         assert r.recv_bytes(2) == '32'
+        # TODO: h.stop()
 
     def test_recv_partition(self):
         h = vanilla.Hub()
@@ -526,13 +527,6 @@ class TestDescriptor(object):
         assert r.recv_partition('\r\n') == '32'
 
     def test_close_read(self):
-        # TODO
-        return
-        import logging
-        logging.basicConfig()
-        print
-        print
-        print "---"
         h = vanilla.Hub()
         r, w = os.pipe()
 
@@ -542,19 +536,12 @@ class TestDescriptor(object):
         w.send('123')
         assert r.recv_bytes(2) == '12'
 
-        print "closing"
         os.close(r.conn.fileno())
         w.send('2')
-        print "stopped here"
-        w.send('3')
+        pytest.raises(vanilla.Closed, w.send, '3')
 
-        print "yes"
-        print "1"
-        w.send('2')
-
-        print "2"
-
-        h.sleep(100)
+        assert r.recv_bytes(1) == '3'
+        pytest.raises(vanilla.Closed, r.recv)
 
 
 class TestSignal(object):

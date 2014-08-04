@@ -673,8 +673,7 @@ class Hub(object):
             return
 
     def stop_on_term(self):
-        done = self.signal.subscribe(C.SIGINT, C.SIGTERM)
-        done.recv()
+        self.signal.subscribe(C.SIGINT, C.SIGTERM).recv()
         self.stop()
 
     def run_task(self, task, *a):
@@ -873,7 +872,8 @@ class Descriptor(object):
             except (socket.error, OSError), e:
                 if e.errno == 11:  # EAGAIN
                     break
-                raise
+                self.recv_sender.close()
+                return
 
     def writer(self):
         for data in self.send_recver:
@@ -883,7 +883,7 @@ class Descriptor(object):
                 except (socket.error, OSError), e:
                     if e.errno == 11:  # EAGAIN
                         raise
-                    raise
+                    self.send_recver.close()
                     return
                 if n == len(data):
                     break
@@ -897,6 +897,9 @@ class Descriptor(object):
             elif event & C.EPOLLOUT:
                 # self.trigger_writer()
                 pass
+
+            else:
+                print "YARG", self.humanize_mask(event)
 
 
 class Signal(object):
