@@ -293,6 +293,23 @@ class TestPipe(object):
         h.spawn(p1.sender.send, 1)
         assert p2.recver.recv() == 1
 
+    def test_exception(self):
+        h = vanilla.Hub()
+
+        p = h.pipe()
+        check = h.pipe()
+
+        @h.spawn
+        def _():
+            try:
+                p.recver.recv()
+            except Exception, e:
+                check.sender.send(e.message)
+
+        p.sender.send(Exception('hai'))
+        assert check.recver.recv() == 'hai'
+
+    # TODO: move to their own test suite
     def test_producer(self):
         h = vanilla.Hub()
 

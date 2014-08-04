@@ -281,6 +281,10 @@ class Sender(End):
         assert self.current is None
         if not self.ready:
             self.pause(timeout=timeout)
+
+        if isinstance(item, Exception):
+            return self._pipe.hub.throw_to(self.other_current, item)
+
         return self._pipe.hub.switch_to(self.other_current, self.other, item)
 
     def connect(self, recver):
