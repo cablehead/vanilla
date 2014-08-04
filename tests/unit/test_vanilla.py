@@ -1,3 +1,4 @@
+import signal
 import time
 import os
 import gc
@@ -379,9 +380,17 @@ class TestRouter(object):
         r.connect(p2.recver)
 
         p1.sender.send(1)
-        assert r.recv() == (p1.recver, 1)
+        assert r.recv() == 1
         p2.sender.send(2)
-        assert r.recv() == (p2.recver, 2)
+        assert r.recv() == 2
+
+        p2.sender.close()
+        h.sleep(1)
+        p1.sender.send(1)
+        assert r.recv() == 1
+
+        r.close()
+        pytest.raises(vanilla.Closed, p1.sender.send, 1)
 
     def test_router_pipe(self):
         h = vanilla.Hub()
@@ -395,8 +404,8 @@ class TestRouter(object):
         p1.pipe(r)
         p2.pipe(r)
 
-        assert r.recv() == (p1, 1)
-        assert r.recv() == (p2, 2)
+        assert r.recv() == 1
+        assert r.recv() == 2
 
 
 class TestBroadcast(object):
@@ -512,6 +521,32 @@ class TestDescriptor(object):
         print "2"
 
         h.sleep(100)
+
+
+class TestSignal(object):
+    def test_signal(self):
+        h = vanilla.Hub()
+
+        signal.setitimer(signal.ITIMER_REAL, 50.0/1000)
+
+        s1 = h.signal.subscribe(signal.SIGALRM)
+        s2 = h.signal.subscribe(signal.SIGALRM)
+
+        assert s1.recv() == signal.SIGALRM
+        assert s2.recv() == signal.SIGALRM
+
+        signal.setitimer(signal.ITIMER_REAL, 10.0/1000)
+        s1.close()
+
+        pytest.raises(vanilla.Halt, s1.recv)
+        assert s2.recv() == signal.SIGALRM
+
+        # TODO:
+        return
+        # assert that removing the last listener for a signal cleans up the
+        # registered file descriptor
+        s2.close()
+        assert not h.registered
 
 
 class TestTCP(object):

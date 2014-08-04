@@ -18,6 +18,7 @@ import cffi
 import uuid
 import time
 import os
+import io
 
 
 from greenlet import getcurrent
@@ -378,17 +379,31 @@ class Router(object):
 
     def main(self, recver, sender):
         while True:
-            ch, item = self.hub.select([recver]+self.inputs)
+            try:
+                ch, item = self.hub.select([recver]+self.inputs)
+            except Halt:
+                if self.add.halted:
+                    # shutdown
+                    for x in self.inputs:
+                        x.close()
+                    return
+                self.inputs = [x for x in self.inputs if not x.halted]
+                continue
+
             if ch == recver:
                 self.inputs.append(item)
             else:
-                sender.send((ch, item))
+                sender.send(item)
 
     def connect(self, recver):
         self.add.send(recver)
 
     def recv(self):
         return self.recver.recv()
+
+    def close(self):
+        self.recver.close()
+        self.add.close()
 
 
 class Broadcast(object):
@@ -485,6 +500,7 @@ class Hub(object):
         self.registered = {}
 
         self.poll = Poll(self)
+        self.signal = Signal(self)
         self.tcp = TCP(self)
         self.http = HTTP(self)
 
@@ -856,6 +872,58 @@ class Descriptor(object):
             elif event & C.EPOLLOUT:
                 # self.trigger_writer()
                 pass
+
+
+class Signal(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.fileno = -1
+        self.count = 0
+        self.mapper = {}
+
+    def subscribe(self, *signals):
+        ret = self.hub.router()
+        for num in signals:
+            if num not in self.mapper:
+                self.mapper[num] = self.hub.broadcast()
+            self.mapper[num].subscribe().pipe(ret)
+        self.reset()
+        return ret
+
+    def reset(self):
+        if self.count == len(self.mapper):
+            return
+
+        self.count = len(self.mapper)
+
+        if not self.count:
+            self.stop()
+            return
+
+        mask = C.sigset(*self.mapper.keys())
+        rc = C.sigprocmask(C.SIG_SETMASK, mask, C.NULL)
+        assert not rc
+        fileno = C.signalfd(self.fileno, mask, C.SFD_NONBLOCK | C.SFD_CLOEXEC)
+
+        if self.fileno == -1:
+            self.start(fileno)
+
+    def start(self, fileno):
+        self.fileno = fileno
+        self.fd = self.hub.poll.fileno(self.fileno)
+
+        @self.hub.spawn
+        def _():
+            size = C.ffi.sizeof('struct signalfd_siginfo')
+            info = C.ffi.new('struct signalfd_siginfo *')
+            while True:
+                data = io.BytesIO(self.fd.recv_bytes(size))
+                data.readinto(C.ffi.buffer(info))
+                num = info.ssi_signo
+                self.mapper[num].send(num)
+
+    def stop(self):
+        raise Exception('TODO')
 
 
 class TCP(object):
