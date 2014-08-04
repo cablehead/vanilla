@@ -268,6 +268,17 @@ class TestPipe(object):
         gc.collect()
         assert check_recver.recv() == 'done'
 
+    def test_pipe(self):
+        h = vanilla.Hub()
+
+        p1 = h.pipe()
+        p2 = h.pipe()
+
+        p1.recver.pipe(p2.sender)
+
+        h.spawn(p1.sender.send, 1)
+        assert p2.recver.recv() == 1
+
     def test_producer(self):
         h = vanilla.Hub()
 
@@ -311,7 +322,7 @@ class TestPipe(object):
         go.trigger()
         assert check.recver.recv() == 1
 
-        pipe = go.pipe
+        pipe = go._pipe
 
         h.sleep(1)
         del go
@@ -356,6 +367,38 @@ class TestBuff(object):
         h.sleep(1)
 
 
+class TestRouter(object):
+    def test_router(self):
+        h = vanilla.Hub()
+        r = h.router()
+
+        p1 = h.pipe()
+        p2 = h.pipe()
+
+        r.connect(p1.recver)
+        r.connect(p2.recver)
+
+        p1.sender.send(1)
+        assert r.recv() == (p1.recver, 1)
+        p2.sender.send(2)
+        assert r.recv() == (p2.recver, 2)
+
+    def test_router_pipe(self):
+        h = vanilla.Hub()
+
+        p1 = h.pulse(10, item=1)
+        h.sleep(5)
+        p2 = h.pulse(10, item=2)
+
+        r = h.router()
+
+        p1.pipe(r)
+        p2.pipe(r)
+
+        assert r.recv() == (p1, 1)
+        assert r.recv() == (p2, 2)
+
+
 class TestBroadcast(object):
     def test_broadcast(self):
         h = vanilla.Hub()
@@ -386,6 +429,30 @@ class TestBroadcast(object):
         b.send(3)
         assert check.recver.recv() == ('s2', 3)
         pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+
+    def test_broadcast_pipe(self):
+        h = vanilla.Hub()
+
+        b = h.broadcast()
+
+        source = h.pulse(20)
+        source.pipe(b)
+
+        check = h.buff(10)
+
+        def subscriber(s, name):
+            for item in s:
+                check.sender.send((name, item))
+
+        s1 = b.subscribe()
+        s2 = b.subscribe()
+
+        h.spawn(subscriber, s1, 's1')
+        h.spawn(subscriber, s2, 's2')
+        h.sleep(1)
+
+        assert check.recver.recv() == ('s1', True)
+        assert check.recver.recv() == ('s2', True)
 
 
 class TestDescriptor(object):

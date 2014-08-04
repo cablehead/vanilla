@@ -185,16 +185,16 @@ def init_C():
 C = init_C()
 
 
-Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
+_Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
 
 
-class _Pipe(object):
+class Pipe(object):
     __slots__ = [
         'hub', 'recver', 'recver_current', 'sender', 'sender_current',
         'closed']
 
     def __new__(cls, hub):
-        self = super(_Pipe, cls).__new__(cls)
+        self = super(Pipe, cls).__new__(cls)
         self.hub = hub
         self.closed = False
 
@@ -206,7 +206,7 @@ class _Pipe(object):
         self.sender = weakref.ref(sender, self.on_abandoned)
         self.sender_current = None
 
-        return Pipe(sender, recver)
+        return _Pipe(sender, recver)
 
     def on_abandoned(self, *a, **kw):
         current = self.recver_current or self.sender_current
@@ -215,18 +215,18 @@ class _Pipe(object):
 
 
 class End(object):
-    __slots__ = ['pipe']
+    __slots__ = ['_pipe']
 
     def __init__(self, pipe):
-        self.pipe = pipe
+        self._pipe = pipe
 
     @property
     def halted(self):
-        return bool(self.pipe.closed or self.other is None)
+        return bool(self._pipe.closed or self.other is None)
 
     @property
     def ready(self):
-        if self.pipe.closed:
+        if self._pipe.closed:
             raise Closed
         if self.other is None:
             raise Abandoned
@@ -243,58 +243,64 @@ class End(object):
     def pause(self, timeout=-1):
         self.select()
         try:
-            _, ret = self.pipe.hub.pause(timeout=timeout)
+            _, ret = self._pipe.hub.pause(timeout=timeout)
         finally:
             self.unselect()
         return ret
 
     def close(self):
         if self.other is not None and self.other_current is not None:
-            self.pipe.hub.throw_to(self.other_current, Closed)
-        self.pipe.closed = True
+            self._pipe.hub.throw_to(self.other_current, Closed)
+        self._pipe.closed = True
 
 
 class Sender(End):
     @property
     def current(self):
-        return self.pipe.sender_current
+        return self._pipe.sender_current
 
     @current.setter
     def current(self, value):
-        self.pipe.sender_current = value
+        self._pipe.sender_current = value
 
     @property
     def other(self):
-        return self.pipe.recver()
+        return self._pipe.recver()
 
     @property
     def other_current(self):
-        return self.pipe.recver_current
+        return self._pipe.recver_current
 
     def send(self, item, timeout=-1):
         # only allow one send at a time
         assert self.current is None
         if not self.ready:
             self.pause(timeout=timeout)
-        return self.pipe.hub.switch_to(self.other_current, self.other, item)
+        return self._pipe.hub.switch_to(self.other_current, self.other, item)
+
+    def connect(self, recver):
+        recver._pipe.recver = self._pipe.recver
+        self._pipe.recver()._pipe = recver._pipe
+        del recver._pipe
+        del self._pipe
 
 
 class Recver(End):
     @property
     def current(self):
-        return self.pipe.recver_current
+        return self._pipe.recver_current
 
     @current.setter
     def current(self, value):
-        self.pipe.recver_current = value
+        self._pipe.recver_current = value
 
     @property
     def other(self):
-        return self.pipe.sender()
+        return self._pipe.sender()
 
     @property
     def other_current(self):
-        return self.pipe.sender_current
+        return self._pipe.sender_current
 
     def recv(self, timeout=-1):
         # only allow one recv at a time
@@ -315,6 +321,9 @@ class Recver(End):
                 yield self.recv()
             except Halt:
                 break
+
+    def pipe(self, sender):
+        sender.connect(self)
 
 
 def buff(hub, size):
@@ -356,7 +365,30 @@ def buff(hub, size):
     in_ = hub.pipe()
     out = hub.pipe()
     hub.spawn(main, in_.recver, out.sender, size)
-    return Pipe(in_.sender, out.recver)
+    return _Pipe(in_.sender, out.recver)
+
+
+class Router(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.inputs = []
+        self.add, recver = hub.pipe()
+        sender, self.recver = hub.pipe()
+        hub.spawn(self.main, recver, sender)
+
+    def main(self, recver, sender):
+        while True:
+            ch, item = self.hub.select([recver]+self.inputs)
+            if ch == recver:
+                self.inputs.append(item)
+            else:
+                sender.send((ch, item))
+
+    def connect(self, recver):
+        self.add.send(recver)
+
+    def recv(self):
+        return self.recver.recv()
 
 
 class Broadcast(object):
@@ -376,6 +408,13 @@ class Broadcast(object):
 
     def unsubscribe(self, recver):
         self.subscribers = [x for x in self.subscribers if x.other != recver]
+
+    # TODO: this seems like a common pattern
+    def connect(self, recver):
+        @self.hub.spawn
+        def _():
+            for item in recver:
+                self.send(item)
 
 
 class lazy(object):
@@ -447,7 +486,7 @@ class Hub(object):
         self.loop = greenlet(self.main)
 
     def pipe(self):
-        return _Pipe(self)
+        return Pipe(self)
 
     def producer(self, f):
         sender, recver = self.pipe()
@@ -487,6 +526,9 @@ class Hub(object):
 
     def broadcast(self):
         return Broadcast(self)
+
+    def router(self):
+        return Router(self)
 
     def select(self, pairs, timeout=-1):
         for pair in pairs:
