@@ -437,6 +437,26 @@ class Broadcast(object):
                 self.send(item)
 
 
+class Value(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.waiters = []
+
+    def send(self, item):
+        self.value = item
+        for waiter in self.waiters:
+            self.hub.switch_to(waiter)
+
+    def recv(self):
+        if not hasattr(self, 'value'):
+            self.waiters.append(getcurrent())
+            self.hub.pause()
+        return self.value
+
+    def clear(self):
+        delattr(self, 'value')
+
+
 class lazy(object):
     def __init__(self, f):
         self.f = f
@@ -547,6 +567,9 @@ class Hub(object):
 
     def broadcast(self):
         return Broadcast(self)
+
+    def value(self):
+        return Value(self)
 
     def router(self):
         return Router(self)

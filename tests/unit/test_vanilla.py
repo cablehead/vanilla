@@ -464,6 +464,27 @@ class TestBroadcast(object):
         assert check.recver.recv() == ('s2', True)
 
 
+class TestValue(object):
+    def test_value(self):
+        h = vanilla.Hub()
+
+        v = h.value()
+        check = h.pipe()
+
+        @h.spawn
+        def _():
+            while True:
+                check.sender.send(v.recv())
+
+        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+        v.send(1)
+        assert check.recver.recv() == 1
+        assert check.recver.recv() == 1
+
+        v.clear()
+        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+
+
 class TestDescriptor(object):
     def test_recv_bytes(self):
         h = vanilla.Hub()
