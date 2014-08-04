@@ -78,6 +78,19 @@ class TestHub(object):
         h.sleep(1)
         assert a == [2]
 
+    def test_stop(self):
+        h = vanilla.Hub()
+
+        @h.spawn
+        def _():
+            h.sleep(20)
+
+        h.stop()
+
+    @pytest.mark.skipif(True, reason='TODO')
+    def test_stop_on_term(self):
+        pass
+
 
 class TestPipe(object):
     def test_close_recver(self):

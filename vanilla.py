@@ -39,6 +39,10 @@ class Halt(Exception):
     pass
 
 
+class Stop(Halt):
+    pass
+
+
 class Closed(Halt):
     pass
 
@@ -514,7 +518,7 @@ class Hub(object):
         self.ready = collections.deque()
         self.scheduled = Scheduler()
 
-        # self.stopped = self.event()
+        self.stopped = self.value()
 
         self.epoll = select.epoll()
         self.registered = {}
@@ -653,7 +657,6 @@ class Hub(object):
             ch = self.registered.pop(fd)
             ch.close()
 
-    """
     def stop(self):
         self.sleep(1)
 
@@ -665,10 +668,9 @@ class Hub(object):
             self.throw_to(task, Stop('stop'))
 
         try:
-            self.stopped.wait()
-        except Closed:
+            self.stopped.recv()
+        except Halt:
             return
-    """
 
     def stop_on_term(self):
         done = self.signal.subscribe(C.SIGINT, C.SIGTERM)
@@ -725,7 +727,7 @@ class Hub(object):
 
             # TODO: add better handling for deadlock
             if not self.registered:
-                self.stopped.set()
+                self.stopped.send(True)
                 return
 
             # run epoll
