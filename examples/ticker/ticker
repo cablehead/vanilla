@@ -31,11 +31,7 @@ class Collector(object):
         self.hub = hub
         self.conn = conn
         self.symbol = symbol
-
-        self.data = None
-        self.output = hub.channel()
-
-        self.pulse = hub.pulse(1000, size=0)
+        self.output = hub.broadcast()
         hub.spawn(self.collect)
 
     def collect(self):
@@ -45,7 +41,7 @@ class Collector(object):
 
         headers = {'User-Agent': USER_AGENT}
 
-        for _ in self.pulse:
+        for _ in self.hub.pulse(1000):
             response = self.conn.get(
                 '/symbol/%s/real-time' % self.symbol.lower(),
                 headers=headers).recv()
@@ -76,52 +72,16 @@ class Collector(object):
 class Feed(object):
     def __init__(self, hub):
         self.hub = hub
-
         # share a common keep-alive connection for all collectors
         self.conn = self.hub.http.connect('http://www.nasdaq.com/')
-
-        self.connections = {}
         self.collectors = {}
 
-    def connect(self):
-        ch = self.hub.channel()
-        self.connections[ch] = []
-        return ch
-
-    def disconnect(self, ch):
-        for symbol in self.connections[ch]:
-            self.unsubscribe(ch, symbol)
-        del self.connections[ch]
-
-    def subscribe(self, ch, symbol):
-        self.connections[ch].append(symbol)
-
+    def subscribe(self, symbol):
         if symbol not in self.collectors:
             print "BOOTING", symbol
             # there's not a collector for this symbol yet, so let's boot one
-            collector = Collector(self.hub, self.conn, symbol)
-            listeners = [ch]
-            self.collectors[symbol] = (collector, listeners)
-
-            # route the collectors output to it's listeners
-            @self.hub.spawn
-            def _():
-                for data in collector.output:
-                    for listener in listeners:
-                        listener.send(data)
-        else:
-            collector, listeners = self.collectors[symbol]
-            listeners.append(ch)
-            ch.send(collector.data)
-
-    def unsubscribe(self, ch, symbol):
-        collector, listeners = self.collectors[symbol]
-        listeners.remove(ch)
-        if not listeners:
-            print "STOPPING", symbol
-            # noone is interested in the collector, let's shut it down
-            collector.pulse.close()
-            del self.collectors[symbol]
+            self.collectors[symbol] = Collector(self.hub, self.conn, symbol)
+        return self.collectors[symbol].output.subscribe()
 
 
 def main():
@@ -143,23 +103,19 @@ def main():
 
     @app.websocket('/')
     def index(ws):
-        for item in ws.recver:
-            print item
+        watch = [ws.recver]
 
-        return
-
-        watch = feed.connect()
         while True:
             try:
-                ch, data = h.select(watch, ws)
-                if ch == watch:
-                    ws.send(json.dumps(data))
-                elif ch == ws:
-                    if pattern.match(data):
-                        feed.subscribe(watch, data)
-            except vanilla.Closed:
-                break
-        feed.disconnect(watch)
+                ch, data = h.select(watch)
+            except vanilla.Halt:
+                return
+
+            if ch == ws.recver:
+                if pattern.match(data):
+                    watch.append(feed.subscribe(data))
+            else:
+                ws.send(json.dumps(data))
 
     h.stop_on_term()
     print 'peace.'

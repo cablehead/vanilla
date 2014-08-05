@@ -322,22 +322,6 @@ class TestPipe(object):
         h.sleep(10)
         assert counter.recv() == 1
 
-    def test_pulse(self):
-        h = vanilla.Hub()
-
-        trigger = h.pulse(20)
-        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
-
-        h.sleep(20)
-        assert trigger.recv(timeout=0)
-        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
-
-        h.sleep(20)
-        assert trigger.recv(timeout=0)
-        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
-
-        # TODO: test abandoned
-
     def test_trigger(self):
         h = vanilla.Hub()
 
@@ -396,6 +380,24 @@ class TestBuff(object):
 
         gc.collect()
         h.sleep(1)
+
+
+class TestPulse(object):
+    def test_pulse(self):
+        h = vanilla.Hub()
+
+        trigger = h.pulse(20)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        h.sleep(20)
+        assert trigger.recv(timeout=0)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        h.sleep(20)
+        assert trigger.recv(timeout=0)
+        pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
+
+        h.stop()
 
 
 class TestRouter(object):

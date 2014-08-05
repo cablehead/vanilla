@@ -546,8 +546,12 @@ class Hub(object):
         @self.producer
         def _(sender):
             while True:
-                self.sleep(ms)
+                try:
+                    self.sleep(ms)
+                except Halt:
+                    break
                 sender.send(item)
+            sender.close()
         return _
 
     def consumer(self, f):
