@@ -356,7 +356,7 @@ def buff(hub, size=0):
                     sender.close()
                     return
 
-            if not recver.halted and size > 0 and len(buff) < size:
+            if not recver.halted and (size <= 0 or len(buff) < size):
                 watch.append(recver)
 
             try:
@@ -574,7 +574,7 @@ class Hub(object):
         sender.trigger = functools.partial(sender.send, True)
         return sender
 
-    def buff(self, size):
+    def buff(self, size=0):
         return buff(self, size)
 
     def broadcast(self):
@@ -1151,7 +1151,9 @@ class HTTPClient(HTTPSocket):
             ('User-Agent', self.agent),
             ('Host', parsed.netloc), ])
 
-        self.responses = self.hub.consumer(self.reader)
+        # TODO: fix API
+        self.responses, recver = self.hub.buff()
+        recver.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
         version, code, message = self.socket.recv_line().split(' ', 2)
