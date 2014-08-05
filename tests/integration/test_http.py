@@ -25,7 +25,7 @@ def test_HTTPClient():
     start = time.time()
     response = drip.recv()
     took, start = time.time() - start, time.time()
-    assert 1.5 > took > 1
+    assert 1.5 > took > .9
     assert response.status.code == 200
 
     # response should be chunked
@@ -37,7 +37,7 @@ def test_HTTPClient():
     assert took < 0.005
 
     # check remaining chunks come every second
-    for item in response.body.recv():
+    for item in response.body:
         took, start = time.time() - start, time.time()
         assert item == '*'
         assert 1.4 > took > .8
