@@ -1,10 +1,17 @@
 ### ways to send:
 
 - pipe: blocks on send, can only have one recver
+    - one sender, one recver
+
 - dealer: one sender, many recvers
+
 - tee: when all are ready, give to all
+
 - broadcast: give to all that are ready
+    - one sender, many recvers
+
 - value: when set always ready, can broadcast updates
+    - one sender, many recvers
 
 
 ### not sure if this is a sender or a recver .. i think recver??
@@ -56,8 +63,8 @@
 
     - client socket:
         - what happens if socket dies?
-            - current request is stuffed
-            - outstanding responses are stuffed
+            - current request is broken
+            - outstanding responses are broken
             - how to signal, and recover?
 
         - stop, only really makes sense to socket
