@@ -514,6 +514,11 @@ class TestValue(object):
         v.clear()
         pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
 
+    def test_value_timeout(self):
+        h = vanilla.Hub()
+        v = h.value()
+        pytest.raises(vanilla.Timeout, v.recv, timeout=0)
+
 
 class TestDescriptor(object):
     def test_recv_bytes(self):
@@ -730,7 +735,7 @@ class TestWebsocket(object):
         @h.http.listen()
         def serve(request, response):
             ws = response.upgrade()
-            print ws.recv()
+            ws.recv()
             return
 
         uri = 'ws://localhost:%s' % serve.port

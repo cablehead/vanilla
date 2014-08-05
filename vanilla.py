@@ -455,10 +455,10 @@ class Value(object):
         for waiter in self.waiters:
             self.hub.switch_to(waiter)
 
-    def recv(self):
+    def recv(self, timeout=-1):
         if not hasattr(self, 'value'):
             self.waiters.append(getcurrent())
-            self.hub.pause()
+            self.hub.pause(timeout=timeout)
         return self.value
 
     def clear(self):
@@ -807,12 +807,13 @@ class Descriptor(object):
 
         C.unblock(conn.fileno())
         self.conn = conn
+        self.fileno = self.conn.fileno()
 
         self.timeout = -1
         self.line_break = '\n'
 
         self.events = self.hub.register(
-            self.conn.fileno(),
+            self.fileno,
             C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
             C.EPOLLRDHUP)
 
@@ -909,9 +910,16 @@ class Descriptor(object):
             else:
                 print "YARG", self.humanize_mask(event)
 
+        self.close()
+
+    def close(self):
         self.recv_sender.close()
         self.send_recver.close()
-        self.hub.unregister(self.conn.fileno())
+        self.hub.unregister(self.fileno)
+        try:
+            self.conn.close()
+        except:
+            pass
 
 
 class Signal(object):
@@ -1300,7 +1308,17 @@ class HTTPServer(HTTPSocket):
         # TODO: spawn a green thread this request
         # TODO: handle when this is a websocket upgrade request
         while True:
-            request = self.recv_request()
+            try:
+                request = self.recv_request()
+
+            except Halt:
+                return
+
+            except Timeout:
+                print "Request Timeout"
+                self.send_response(408, 'Request Timeout')
+                self.socket.close()
+                return
 
             sender, recver = self.hub.pipe()
             response = self.Response(self, request, sender)
@@ -1382,7 +1400,11 @@ class WebSocket(object):
 
     def reader(self, sender):
         while True:
-            sender.send(self._recv())
+            try:
+                sender.send(self._recv())
+            except Halt:
+                sender.close()
+                return
 
     def recv(self):
         return self.recver.recv()
@@ -1405,7 +1427,7 @@ class WebSocket(object):
             assert length <= 125
             if opcode == WebSocket.OP_CLOSE:
                 self.socket.recv_bytes(length)
-                self.socket.conn.close()
+                self.socket.close()
                 raise Closed
 
         if length == 126:
@@ -1461,7 +1483,7 @@ class WebSocket(object):
             WebSocket.OP_CLOSE | WebSocket.FIN,
             MASK)
         self.socket.send(header)
-        self.socket.conn.close()
+        self.socket.close()
 
 
 class HTTPBean(object):
