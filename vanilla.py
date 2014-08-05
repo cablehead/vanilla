@@ -1241,6 +1241,7 @@ class HTTPServer(HTTPSocket):
             self.headers = {}
 
             self.is_started = False
+            self.is_upgraded = False
 
         def start(self):
             assert not self.is_started
@@ -1279,8 +1280,10 @@ class HTTPServer(HTTPSocket):
 
             self.start()
             self.sender.close()
-            return WebSocket(
+            ws = WebSocket(
                 self.server.hub, self.server.socket, is_client=False)
+            self.is_upgraded = ws
+            return ws
 
     def __init__(self, hub, socket, request_timeout, serve):
         self.hub = hub
@@ -1311,6 +1314,10 @@ class HTTPServer(HTTPSocket):
             except Exception, e:
                 # TODO: send 500
                 raise
+
+            if response.is_upgraded:
+                response.is_upgraded.close()
+                return
 
             response.end(data)
 
@@ -1398,8 +1405,7 @@ class WebSocket(object):
             assert length <= 125
             if opcode == WebSocket.OP_CLOSE:
                 self.socket.recv_bytes(length)
-                raise
-                self.fd.close()
+                self.socket.conn.close()
                 raise Closed
 
         if length == 126:
@@ -1447,6 +1453,15 @@ class WebSocket(object):
             self.socket.send(header + mask + self.mask(mask, data))
         else:
             self.socket.send(header + data)
+
+    def close(self):
+        MASK = WebSocket.MASK if self.is_client else 0
+        header = struct.pack(
+            '!BB',
+            WebSocket.OP_CLOSE | WebSocket.FIN,
+            MASK)
+        self.socket.send(header)
+        self.socket.conn.close()
 
 
 class HTTPBean(object):

@@ -143,6 +143,8 @@ def main():
 
     @app.websocket('/')
     def index(ws):
+        print "hi"
+        return
         watch = feed.connect()
         while True:
             try:

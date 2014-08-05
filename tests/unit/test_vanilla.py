@@ -724,6 +724,20 @@ class TestWebsocket(object):
         ws.send(message)
         assert h.select([ws.recver]) == (ws.recver, message)
 
+    def test_websocket_end(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            ws = response.upgrade()
+            print ws.recv()
+            return
+
+        uri = 'ws://localhost:%s' % serve.port
+        ws = h.http.connect(uri).websocket('/')
+        ws.send('1')
+        pytest.raises(vanilla.Closed, ws.recv)
+
 
 class TestBean(object):
     def conn(self, app):
