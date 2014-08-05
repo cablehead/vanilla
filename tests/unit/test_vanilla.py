@@ -577,6 +577,15 @@ class TestDescriptor(object):
         assert r.recv_bytes(1) == '3'
         pytest.raises(vanilla.Closed, r.recv)
 
+    def test_stop(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
+
+        h.stop()
+
 
 class TestSignal(object):
     def test_signal(self):

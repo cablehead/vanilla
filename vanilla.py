@@ -909,6 +909,10 @@ class Descriptor(object):
             else:
                 print "YARG", self.humanize_mask(event)
 
+        self.recv_sender.close()
+        self.send_recver.close()
+        self.hub.unregister(self.conn.fileno())
+
 
 class Signal(object):
     def __init__(self, hub):
