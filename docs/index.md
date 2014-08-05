@@ -11,9 +11,9 @@
 ```python
 
     >>> h = vanilla.Hub()
-    >>> ch = h.channel()
-    >>> h.spawn(ch.send, 'Hello World')
-    >>> ch.recv()
+    >>> sender, recver = h.pipe()
+    >>> h.spawn(sender.send, 'Hello World')
+    >>> recver.recv()
     'Hello World'
 ```
 

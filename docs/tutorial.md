@@ -6,15 +6,15 @@ the input appropriately and potentially send output on different channels.
 ```python
 
     h = vanilla.Hub()
-    ch = h.channel()
+    sender, recver = h.pipe()
 
     @h.spawn
     def _():
         while True:
-            ch.send('tick')
+            sender.send('tick')
             h.sleep(1000)
 
-    for item in ch:
+    for item in recver:
         print item
 ```
 
@@ -46,22 +46,21 @@ the main thread waiting for one of them.
 ```python
 
     h = vanilla.Hub()
-    ch = h.channel()
+    sender, recver = h.pipe()
 
     @h.spawn
     def _():
         while True:
-            ch.send('tick')
+            sender.send('tick')
             h.sleep(1000)
 
     @h.spawn
     def _():
-        for item in ch:
+        for item in recver:
             print item
 
     done = h.signal.subscribe(signal.SIGINT, signal.SIGTERM)
     done.recv()
-    h.signal.unsubscribe(done)
 ```
 
 ## Stopping services cleanly
@@ -76,24 +75,24 @@ subscriptions.
 ```python
 
     h = vanilla.Hub()
-    ch = h.channel()
+    sender, recver = h.pipe()
 
     @h.spawn
     def _():
         while True:
             try:
-                ch.send('tick')
+                sender.send('tick')
                 h.sleep(1000)
             except vanilla.Stop:
                 break
-        ch.send('writer done.')
-        ch.close()
+        sender.send('sender done.')
+        sender.close()
 
     @h.spawn
     def _():
-        for item in ch:
+        for item in recver:
             print item
-        print 'reader done.'
+        print 'recver done.'
 
     done = h.signal.subscribe(signal.SIGINT, signal.SIGTERM)
     done.recv()
@@ -116,24 +115,24 @@ This is such a common pattern that there's a convenience to do this with
 ```python
 
     h = vanilla.Hub()
-    ch = h.channel()
+    sender, recver = h.pipe()
 
     @h.spawn
     def _():
         while True:
             try:
-                ch.send('tick')
+                sender.send('tick')
                 h.sleep(1000)
             except vanilla.Stop:
                 break
-        ch.send('writer done.')
-        ch.close()
+        sender.send('sender done.')
+        sender.close()
 
     @h.spawn
     def _():
-        for item in ch:
+        for item in recver:
             print item
-        print 'reader done.'
+        print 'recver done.'
 
     h.stop_on_term()
 
