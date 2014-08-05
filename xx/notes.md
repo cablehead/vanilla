@@ -1,7 +1,7 @@
 ### ways to send:
 
 - pipe: blocks on send, can only have one recver
-- dealer: as soon as one is ready, give to that one, can have many recvers
+- dealer: one sender, many recvers
 - tee: when all are ready, give to all
 - broadcast: give to all that are ready
 - value: when set always ready, can broadcast updates
@@ -14,11 +14,8 @@
 
 ### ways to recv:
 
-- recv: as soon as this one is ready, recv
-
-- router (select): as soon as one is ready, recv that one
-    - everything needs to be selectable
-
+- pipe: as soon as this one is ready, recv
+- router: many senders one recver
 - gather: once all are ready, recv all
 
 
