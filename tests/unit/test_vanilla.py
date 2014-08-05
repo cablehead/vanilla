@@ -625,6 +625,8 @@ class TestTCP(object):
         client.send('Toby')
         assert client.recv() == 'Toby Toby'
 
+        h.stop()
+
 
 class TestHTTP(object):
     def test_get_body(self):

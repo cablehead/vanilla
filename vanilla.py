@@ -999,7 +999,12 @@ class TCPListener(object):
     def accept(self):
         ready = self.hub.register(self.sock.fileno(), C.EPOLLIN)
         while True:
-            ready.recv()
+            try:
+                ready.recv()
+            except Halt:
+                self.hub.unregister(self.sock.fileno())
+                self.sock.close()
+                return
             conn, host = self.sock.accept()
             conn = self.hub.poll.socket(conn)
             self.hub.spawn(self.serve, conn)
