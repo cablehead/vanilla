@@ -957,7 +957,11 @@ class Signal(object):
             size = C.ffi.sizeof('struct signalfd_siginfo')
             info = C.ffi.new('struct signalfd_siginfo *')
             while True:
-                data = io.BytesIO(self.fd.recv_bytes(size))
+                try:
+                    data = io.BytesIO(self.fd.recv_bytes(size))
+                except Halt:
+                    self.hub.unregister(self.fileno)
+                    return
                 data.readinto(C.ffi.buffer(info))
                 num = info.ssi_signo
                 self.mapper[num].send(num)
