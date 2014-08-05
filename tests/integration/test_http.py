@@ -2,16 +2,18 @@ import json
 import time
 import os
 
+import pytest
 
 import vanilla
 
 
-def test_HTTPClient():
+@pytest.mark.parametrize('scheme', ['http', 'https'])
+def test_HTTPClient(scheme):
     # TODO: Just using httpbin until the HTTP Server side of Vanilla is cleaned
     # up. There should be an integration suite that could still use httpbin.
     h = vanilla.Hub()
 
-    conn = h.http.connect('http://httpbin.org')
+    conn = h.http.connect('%s://httpbin.org' % scheme)
 
     get1 = conn.get('/get', params={'foo': 'bar'})
     drip = conn.get('/drip', params={'numbytes': 3, 'duration': 3, 'delay': 1})
@@ -25,7 +27,7 @@ def test_HTTPClient():
     start = time.time()
     response = drip.recv()
     took, start = time.time() - start, time.time()
-    assert 1.5 > took > .9
+    assert scheme == 'https' or 1.5 > took > .9
     assert response.status.code == 200
 
     # response should be chunked
@@ -34,13 +36,13 @@ def test_HTTPClient():
     # the first chunk should come immediately
     assert response.body.recv() == '*'
     took, start = time.time() - start, time.time()
-    assert took < 0.005
+    assert scheme == 'https' or took < 0.005
 
     # check remaining chunks come every second
     for item in response.body:
         took, start = time.time() - start, time.time()
         assert item == '*'
-        assert 1.4 > took > .8
+        assert scheme == 'https' or 1.4 > took > .8
 
     response = get2.recv()
     assert response.status.code == 200

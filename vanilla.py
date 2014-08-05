@@ -17,6 +17,7 @@ import heapq
 import cffi
 import uuid
 import time
+import ssl
 import os
 import io
 
@@ -1139,9 +1140,15 @@ class HTTPClient(HTTPSocket):
         parsed = urlparse.urlsplit(url)
         assert parsed.query == ''
         assert parsed.fragment == ''
-        host, port = urllib.splitnport(parsed.netloc, 80)
+
+        default_port = 443 if parsed.scheme == 'https' else 80
+        host, port = urllib.splitnport(parsed.netloc, default_port)
 
         self.socket = self.hub.tcp.connect(host=host, port=port)
+
+        if parsed.scheme == 'https':
+            self.socket.conn = ssl.wrap_socket(self.socket.conn)
+
         self.socket.line_break = '\r\n'
 
         self.agent = 'vanilla/%s' % __version__
