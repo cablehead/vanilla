@@ -335,7 +335,7 @@ class Recver(End):
         sender.connect(self)
 
 
-def buff(hub, size):
+def buff(hub, size=0):
     buff = collections.deque()
 
     def main(recver, sender, size):
@@ -356,7 +356,7 @@ def buff(hub, size):
                     sender.close()
                     return
 
-            if not recver.halted and len(buff) < size:
+            if not recver.halted and size > 0 and len(buff) < size:
                 watch.append(recver)
 
             try:
