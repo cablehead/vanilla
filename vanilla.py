@@ -809,6 +809,8 @@ class Descriptor(object):
         self.conn = conn
         self.fileno = self.conn.fileno()
 
+        self.closed = False
+
         self.timeout = -1
         self.line_break = '\n'
 
@@ -913,6 +915,7 @@ class Descriptor(object):
         self.close()
 
     def close(self):
+        self.closed = True
         self.recv_sender.close()
         self.send_recver.close()
         self.hub.unregister(self.fileno)
@@ -1477,13 +1480,14 @@ class WebSocket(object):
             self.socket.send(header + data)
 
     def close(self):
-        MASK = WebSocket.MASK if self.is_client else 0
-        header = struct.pack(
-            '!BB',
-            WebSocket.OP_CLOSE | WebSocket.FIN,
-            MASK)
-        self.socket.send(header)
-        self.socket.close()
+        if not self.socket.closed:
+            MASK = WebSocket.MASK if self.is_client else 0
+            header = struct.pack(
+                '!BB',
+                WebSocket.OP_CLOSE | WebSocket.FIN,
+                MASK)
+            self.socket.send(header)
+            self.socket.close()
 
 
 class HTTPBean(object):
