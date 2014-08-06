@@ -818,22 +818,31 @@ class TestBean(object):
         h = vanilla.Hub()
         app = h.http.bean()
 
-        @app.get('/common')
+        @app.get('/')
         def get(request, response):
             return request.method
 
-        @app.websocket('/common')
+        @app.post('/')
+        def get(request, response):
+            return request.consume()
+
+        @app.websocket('/')
         def websocket(ws):
             while True:
                 ws.send(ws.recv())
 
         conn = self.conn(app)
-        response = conn.get('/common').recv()
+        response = conn.get('/').recv()
         assert response.status.code == 200
         assert response.consume() == 'GET'
 
         conn = self.conn(app)
-        ws = conn.websocket('/common')
+        response = conn.post('/', data='toby').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'toby'
+
+        conn = self.conn(app)
+        ws = conn.websocket('/')
         ws.send('toby')
         assert ws.recv() == 'toby'
 
