@@ -371,7 +371,7 @@ class TestPipe(object):
         go.trigger()
         assert check.recv() == 1
 
-        pipe = go._pipe
+        pipe = go.middle
 
         h.sleep(1)
         del go

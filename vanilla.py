@@ -238,18 +238,18 @@ class Pipe(object):
 
 
 class End(object):
-    __slots__ = ['_pipe']
+    __slots__ = ['middle']
 
     def __init__(self, pipe):
-        self._pipe = pipe
+        self.middle = pipe
 
     @property
     def halted(self):
-        return bool(self._pipe.closed or self.other is None)
+        return bool(self.middle.closed or self.other is None)
 
     @property
     def ready(self):
-        if self._pipe.closed:
+        if self.middle.closed:
             raise Closed
         if self.other is None:
             raise Abandoned
@@ -266,33 +266,33 @@ class End(object):
     def pause(self, timeout=-1):
         self.select()
         try:
-            _, ret = self._pipe.hub.pause(timeout=timeout)
+            _, ret = self.middle.hub.pause(timeout=timeout)
         finally:
             self.unselect()
         return ret
 
     def close(self):
         if self.other is not None and self.other_current is not None:
-            self._pipe.hub.throw_to(self.other_current, Closed)
-        self._pipe.closed = True
+            self.middle.hub.throw_to(self.other_current, Closed)
+        self.middle.closed = True
 
 
 class Sender(End):
     @property
     def current(self):
-        return self._pipe.sender_current
+        return self.middle.sender_current
 
     @current.setter
     def current(self, value):
-        self._pipe.sender_current = value
+        self.middle.sender_current = value
 
     @property
     def other(self):
-        return self._pipe.recver()
+        return self.middle.recver()
 
     @property
     def other_current(self):
-        return self._pipe.recver_current
+        return self.middle.recver_current
 
     def send(self, item, timeout=-1):
         # only allow one send at a time
@@ -301,33 +301,33 @@ class Sender(End):
             self.pause(timeout=timeout)
 
         if isinstance(item, Exception):
-            return self._pipe.hub.throw_to(self.other_current, item)
+            return self.middle.hub.throw_to(self.other_current, item)
 
-        return self._pipe.hub.switch_to(self.other_current, self.other, item)
+        return self.middle.hub.switch_to(self.other_current, self.other, item)
 
     def connect(self, recver):
-        recver._pipe.recver = self._pipe.recver
-        self._pipe.recver()._pipe = recver._pipe
-        del recver._pipe
-        del self._pipe
+        recver.middle.recver = self.middle.recver
+        self.middle.recver().middle = recver.middle
+        del recver.middle
+        del self.middle
 
 
 class Recver(End):
     @property
     def current(self):
-        return self._pipe.recver_current
+        return self.middle.recver_current
 
     @current.setter
     def current(self, value):
-        self._pipe.recver_current = value
+        self.middle.recver_current = value
 
     @property
     def other(self):
-        return self._pipe.sender()
+        return self.middle.sender()
 
     @property
     def other_current(self):
-        return self._pipe.sender_current
+        return self.middle.sender_current
 
     def recv(self, timeout=-1):
         # only allow one recv at a time
@@ -351,8 +351,8 @@ class Recver(End):
 
     def pipe(self, sender):
         if callable(sender):
-            pipe = self._pipe.hub.pipe()
-            self._pipe.hub.spawn(sender, self, pipe.sender)
+            pipe = self.middle.hub.pipe()
+            self.middle.hub.spawn(sender, self, pipe.sender)
             return pipe.recver
         else:
             return sender.connect(self)
@@ -365,7 +365,7 @@ class Recver(End):
         return recver
 
     def consume(self, f):
-        @self._pipe.hub.spawn
+        @self.middle.hub.spawn
         def _():
             for item in self:
                 f(item)
