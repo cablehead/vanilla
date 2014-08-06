@@ -207,6 +207,9 @@ class _Pipe(_Pipe):
     def map(self, *a, **kw):
         return self.recver.map(*a, **kw)
 
+    def consume(self, *a, **kw):
+        return self.recver.consume(*a, **kw)
+
 
 class Pipe(object):
     __slots__ = [
@@ -361,6 +364,12 @@ class Recver(End):
                 sender.send(f(item))
         return recver
 
+    def consume(self, f):
+        @self._pipe.hub.spawn
+        def _():
+            for item in self:
+                f(item)
+
 
 def buff(hub, size=0):
     buff = collections.deque()
@@ -464,12 +473,8 @@ class Broadcast(object):
         self.subscribers.append(sender)
         return recver
 
-    # TODO: this seems like a common pattern
     def connect(self, recver):
-        @self.hub.spawn
-        def _():
-            for item in recver:
-                self.send(item)
+        recver.consume(self.send)
 
 
 class Value(object):

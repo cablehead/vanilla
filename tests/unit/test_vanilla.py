@@ -311,13 +311,21 @@ class TestPipe(object):
     def test_map(self):
         h = vanilla.Hub()
         p1 = h.pipe()
-        p2 = p1.map(lambda x: x*2)
+        p2 = p1.map(lambda x: x * 2)
 
         h.spawn(p1.send, 1)
         assert p2.recv() == 2
 
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
+
+    def test_consume(self):
+        h = vanilla.Hub()
+        p = h.pipe()
+        check = h.pipe()
+        p.consume(lambda x: check.send(x))
+        p.send(1)
+        assert check.recv() == 1
 
     def test_exception(self):
         h = vanilla.Hub()
