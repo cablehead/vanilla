@@ -716,6 +716,24 @@ class TestHTTP(object):
         # TODO: stop!!, everything needs stop testing
         # h.stop()
 
+    def test_post(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            return request.consume()
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        response = conn.post('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == ''
+
+        response = conn.post('/', data='toby').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'toby'
+
     def test_404(self):
         h = vanilla.Hub()
 

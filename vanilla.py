@@ -1179,6 +1179,7 @@ class HTTPClient(HTTPSocket):
 
         if parsed.scheme == 'https':
             self.socket.conn = ssl.wrap_socket(self.socket.conn)
+            self.socket.conn.setblocking(0)
 
         self.socket.line_break = '\r\n'
 
@@ -1228,7 +1229,7 @@ class HTTPClient(HTTPSocket):
             path='/',
             params=None,
             headers=None,
-            version=HTTP_VERSION):
+            data=None):
 
         request_headers = {}
         request_headers.update(self.default_headers)
@@ -1238,20 +1239,29 @@ class HTTPClient(HTTPSocket):
         if params:
             path += '?' + urllib.urlencode(params)
 
-        request = '%s %s %s\r\n' % (method, path, version)
+        request = '%s %s %s\r\n' % (method, path, HTTP_VERSION)
         self.socket.send(request)
+
+        # TODO: handle chunked transfers
+        if data is not None:
+            request_headers['Content-Length'] = len(data)
         self.send_headers(request_headers)
+
+        # TODO: handle chunked transfers
+        if data is not None:
+            self.socket.send(data)
 
         sender, recver = self.hub.pipe()
         self.responses.send(sender)
         return recver
 
-    def get(self, path='/', params=None, headers=None, version=HTTP_VERSION):
-        return self.request('GET', path, params, headers, version)
+    def get(self, path='/', params=None, headers=None):
+        return self.request('GET', path, params, headers, None)
 
-    def websocket(
-            self, path='/', params=None, headers=None, version=HTTP_VERSION):
+    def post(self, path='/', params=None, headers=None, data=''):
+        return self.request('POST', path, params, headers, data)
 
+    def websocket(self, path='/', params=None, headers=None):
         key = base64.b64encode(uuid.uuid4().bytes)
 
         headers = headers or {}
@@ -1261,10 +1271,8 @@ class HTTPClient(HTTPSocket):
             'Sec-WebSocket-Key': key,
             'Sec-WebSocket-Version': 13, })
 
-        response = self.request('GET', path, params, headers, version).recv()
-
+        response = self.request('GET', path, params, headers, None).recv()
         assert response.status.code == 101
-
         assert response.headers['Upgrade'].lower() == 'websocket'
         assert response.headers['Sec-WebSocket-Accept'] == \
             WebSocket.accept_key(key)
@@ -1275,6 +1283,10 @@ class HTTPClient(HTTPSocket):
 class HTTPServer(HTTPSocket):
     Request = collections.namedtuple(
         'Request', ['method', 'path', 'version', 'headers'])
+
+    class Request(Request):
+        def consume(self):
+            return self.body
 
     class Response(object):
         """
@@ -1406,7 +1418,11 @@ class HTTPServer(HTTPSocket):
     def recv_request(self, timeout=None):
         method, path, version = self.socket.recv_line().split(' ', 2)
         headers = self.recv_headers()
-        return self.Request(method, path, version, headers)
+        request = self.Request(method, path, version, headers)
+        # TODO: handle chunked transfers
+        length = int(headers.get('content-length', 0))
+        request.body = self.socket.recv_bytes(length)
+        return request
 
     def send_response(self, code, message):
         self.socket.send('HTTP/1.1 %s %s\r\n' % (code, message))

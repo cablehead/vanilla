@@ -8,45 +8,63 @@ import vanilla
 
 
 @pytest.mark.parametrize('scheme', ['http', 'https'])
-def test_HTTPClient(scheme):
-    # TODO: Just using httpbin until the HTTP Server side of Vanilla is cleaned
-    # up. There should be an integration suite that could still use httpbin.
-    h = vanilla.Hub()
+class TestHTTP(object):
+    def test_get_basic(self, scheme):
+        h = vanilla.Hub()
+        conn = h.http.connect('%s://httpbin.org' % scheme)
+        response = conn.get('/get', params={'foo': 'bar'}).recv()
+        assert response.status.code == 200
+        assert json.loads(response.consume())['args'] == {'foo': 'bar'}
 
-    conn = h.http.connect('%s://httpbin.org' % scheme)
+    @pytest.mark.skipif(True, reason='TODO')
+    def test_get_keepalive(self, scheme):
+        h = vanilla.Hub()
 
-    get1 = conn.get('/get', params={'foo': 'bar'})
-    drip = conn.get('/drip', params={'numbytes': 3, 'duration': 3, 'delay': 1})
-    get2 = conn.get('/get', params={'foo': 'bar2'})
+        conn = h.http.connect('%s://httpbin.org' % scheme)
 
-    response = get1.recv()
-    assert response.status.code == 200
-    assert json.loads(response.consume())['args'] == {'foo': 'bar'}
+        get1 = conn.get('/get', params={'foo': 'bar'})
+        drip = conn.get(
+            '/drip', params={'numbytes': 3, 'duration': 3, 'delay': 1})
+        get2 = conn.get('/get', params={'foo': 'bar2'})
 
-    # assert the first payload from drip takes roughly a second
-    start = time.time()
-    response = drip.recv()
-    took, start = time.time() - start, time.time()
-    assert scheme == 'https' or 1.5 > took > .9
-    assert response.status.code == 200
+        response = get1.recv()
+        assert response.status.code == 200
+        assert json.loads(response.consume())['args'] == {'foo': 'bar'}
 
-    # response should be chunked
-    assert response.headers['transfer-encoding'] == 'chunked'
-
-    # the first chunk should come immediately
-    assert response.body.recv() == '*'
-    took, start = time.time() - start, time.time()
-    assert scheme == 'https' or took < 0.005
-
-    # check remaining chunks come every second
-    for item in response.body:
+        # assert the first payload from drip takes roughly a second
+        start = time.time()
+        response = drip.recv()
         took, start = time.time() - start, time.time()
-        assert item == '*'
-        assert scheme == 'https' or 1.4 > took > .8
+        assert scheme == 'https' or 1.5 > took > .9
+        assert response.status.code == 200
 
-    response = get2.recv()
-    assert response.status.code == 200
-    assert json.loads(response.consume())['args'] == {'foo': 'bar2'}
+        # response should be chunked
+        assert response.headers['transfer-encoding'] == 'chunked'
+
+        # the first chunk should come immediately
+        assert response.body.recv() == '*'
+        took, start = time.time() - start, time.time()
+        assert scheme == 'https' or took < 0.005
+
+        # check remaining chunks come every second
+        for item in response.body:
+            took, start = time.time() - start, time.time()
+            assert item == '*'
+            assert scheme == 'https' or 1.4 > took > .8
+
+        response = get2.recv()
+        assert response.status.code == 200
+        assert json.loads(response.consume())['args'] == {'foo': 'bar2'}
+
+    def test_post(self, scheme):
+        h = vanilla.Hub()
+
+        conn = h.http.connect('%s://httpbin.org' % scheme)
+
+        response = conn.post('/post', data='toby').recv()
+        assert response.status.code == 200
+        body = response.consume()
+        assert json.loads(body)['data'] == 'toby'
 
 
 def test_WebSocketClient():
