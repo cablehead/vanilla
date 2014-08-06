@@ -106,12 +106,12 @@ class TestPipe(object):
                     sender.send(i)
                 except vanilla.Closed:
                     break
-            check.sender.send('done')
+            check.send('done')
 
         assert recver.recv() == 0
         assert recver.recv() == 1
         recver.close()
-        assert check.recver.recv() == 'done'
+        assert check.recv() == 'done'
 
     def test_close_sender(self):
         h = vanilla.Hub()
@@ -122,21 +122,21 @@ class TestPipe(object):
         @h.spawn
         def _():
             for i in recver:
-                check.sender.send(i)
-            check.sender.send('done')
+                check.send(i)
+            check.send('done')
 
         sender.send(0)
-        assert check.recver.recv() == 0
+        assert check.recv() == 0
         sender.send(1)
-        assert check.recver.recv() == 1
+        assert check.recv() == 1
         sender.close()
-        assert check.recver.recv() == 'done'
+        assert check.recv() == 'done'
 
     def test_timeout(self):
         h = vanilla.Hub()
 
         sender, recver = h.pipe()
-        check_sender, check_recver = h.pipe()
+        check = h.pipe()
 
         pytest.raises(vanilla.Timeout, sender.send, 12, timeout=0)
         pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
@@ -145,11 +145,11 @@ class TestPipe(object):
         @h.spawn
         def _():
             h.sleep(20)
-            check_sender.send(recver.recv())
+            check.send(recver.recv())
 
         pytest.raises(vanilla.Timeout, sender.send, 12, timeout=10)
         sender.send(12, timeout=20)
-        assert check_recver.recv() == 12
+        assert check.recv() == 12
 
         @h.spawn
         def _():
@@ -164,16 +164,16 @@ class TestPipe(object):
 
         s1, r1 = h.pipe()
         s2, r2 = h.pipe()
-        check_s, check_r = h.pipe()
+        check = h.pipe()
 
         @h.spawn
         def _():
-            check_s.send(r1.recv())
+            check.send(r1.recv())
 
         @h.spawn
         def _():
             s2.send(10)
-            check_s.send('done')
+            check.send('done')
 
         ch, item = h.select([s1, r2])
         assert ch == s1
@@ -183,47 +183,47 @@ class TestPipe(object):
         assert ch == r2
         assert item == 10
 
-        assert check_r.recv() == 20
-        assert check_r.recv() == 'done'
+        assert check.recv() == 20
+        assert check.recv() == 'done'
 
     def test_select_timeout(self):
         h = vanilla.Hub()
 
         s1, r1 = h.pipe()
         s2, r2 = h.pipe()
-        check_s, check_r = h.pipe()
+        check = h.pipe()
 
         pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=0)
 
         @h.spawn
         def _():
             h.sleep(20)
-            check_s.send(r1.recv())
+            check.send(r1.recv())
 
         pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
         ch, item = h.select([s1, r2], timeout=20)
         assert ch == s1
         s1.send(20)
-        assert check_r.recv() == 20
+        assert check.recv() == 20
 
         @h.spawn
         def _():
             h.sleep(20)
             s2.send(10)
-            check_s.send('done')
+            check.send('done')
 
         pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
 
         ch, item = h.select([s1, r2], timeout=20)
         assert ch == r2
         assert item == 10
-        assert check_r.recv() == 'done'
+        assert check.recv() == 'done'
 
     def test_abandoned_sender(self):
         h = vanilla.Hub()
 
-        check_sender, check_recver = h.pipe()
+        check = h.pipe()
 
         # test abondoned after pause
         sender, recver = h.pipe()
@@ -231,13 +231,13 @@ class TestPipe(object):
         @h.spawn
         def _():
             pytest.raises(vanilla.Abandoned, sender.send, 10)
-            check_sender.send('done')
+            check.send('done')
 
         # sleep so the spawn runs and the send pauses
         h.sleep(1)
         del recver
         gc.collect()
-        assert check_recver.recv() == 'done'
+        assert check.recv() == 'done'
 
         # test abondoned before pause
         sender, recver = h.pipe()
@@ -245,16 +245,16 @@ class TestPipe(object):
         @h.spawn
         def _():
             pytest.raises(vanilla.Abandoned, sender.send, 10)
-            check_sender.send('done')
+            check.send('done')
 
         del recver
         gc.collect()
-        assert check_recver.recv() == 'done'
+        assert check.recv() == 'done'
 
     def test_abandoned_recver(self):
         h = vanilla.Hub()
 
-        check_sender, check_recver = h.pipe()
+        check = h.pipe()
 
         # test abondoned after pause
         sender, recver = h.pipe()
@@ -262,13 +262,13 @@ class TestPipe(object):
         @h.spawn
         def _():
             pytest.raises(vanilla.Abandoned, recver.recv)
-            check_sender.send('done')
+            check.send('done')
 
         # sleep so the spawn runs and the recv pauses
         h.sleep(1)
         del sender
         gc.collect()
-        assert check_recver.recv() == 'done'
+        assert check.recv() == 'done'
 
         # test abondoned before pause
         sender, recver = h.pipe()
@@ -276,11 +276,11 @@ class TestPipe(object):
         @h.spawn
         def _():
             pytest.raises(vanilla.Abandoned, recver.recv)
-            check_sender.send('done')
+            check.send('done')
 
         del sender
         gc.collect()
-        assert check_recver.recv() == 'done'
+        assert check.recv() == 'done'
 
     def test_pipe(self):
         h = vanilla.Hub()
@@ -293,6 +293,32 @@ class TestPipe(object):
         h.spawn(p1.sender.send, 1)
         assert p2.recver.recv() == 1
 
+    def test_pipe_to_function(self):
+        h = vanilla.Hub()
+
+        p1 = h.pipe()
+
+        @p1.pipe
+        def p2(recver, sender):
+            for item in recver:
+                sender.send(item*2)
+
+        h.spawn(p1.send, 1)
+        assert p2.recv() == 2
+        h.spawn(p1.send, 2)
+        assert p2.recv() == 4
+
+    def test_map(self):
+        h = vanilla.Hub()
+        p1 = h.pipe()
+        p2 = p1.map(lambda x: x*2)
+
+        h.spawn(p1.send, 1)
+        assert p2.recv() == 2
+
+        h.spawn(p1.send, 2)
+        assert p2.recv() == 4
+
     def test_exception(self):
         h = vanilla.Hub()
 
@@ -302,12 +328,12 @@ class TestPipe(object):
         @h.spawn
         def _():
             try:
-                p.recver.recv()
+                p.recv()
             except Exception, e:
-                check.sender.send(e.message)
+                check.send(e.message)
 
-        p.sender.send(Exception('hai'))
-        assert check.recver.recv() == 'hai'
+        p.send(Exception('hai'))
+        assert check.recv() == 'hai'
 
     # TODO: move to their own test suite
     def test_producer(self):
@@ -329,13 +355,13 @@ class TestPipe(object):
 
         @h.trigger
         def go():
-            check.sender.send(1)
+            check.send(1)
 
         h.sleep(1)
         gc.collect()
 
         go.trigger()
-        assert check.recver.recv() == 1
+        assert check.recv() == 1
 
         pipe = go._pipe
 
@@ -353,14 +379,14 @@ class TestBuff(object):
         h = vanilla.Hub()
         b = h.buff(2)
 
-        b.sender.send(1, timeout=0)
-        b.sender.send(2, timeout=0)
-        pytest.raises(vanilla.Timeout, b.sender.send, 3, timeout=0)
-        assert b.recver.recv() == 1
+        b.send(1, timeout=0)
+        b.send(2, timeout=0)
+        pytest.raises(vanilla.Timeout, b.send, 3, timeout=0)
+        assert b.recv() == 1
 
-        b.sender.send(3, timeout=0)
-        assert b.recver.recv() == 2
-        assert b.recver.recv() == 3
+        b.send(3, timeout=0)
+        assert b.recv() == 2
+        assert b.recv() == 3
 
         gc.collect()
         h.sleep(1)
@@ -449,7 +475,7 @@ class TestBroadcast(object):
 
         def subscriber(s, name):
             for item in s:
-                check.sender.send((name, item))
+                check.send((name, item))
 
         s1 = b.subscribe()
         s2 = b.subscribe()
@@ -459,17 +485,17 @@ class TestBroadcast(object):
         h.sleep(1)
 
         b.send(1)
-        assert check.recver.recv() == ('s1', 1)
-        assert check.recver.recv() == ('s2', 1)
+        assert check.recv() == ('s1', 1)
+        assert check.recv() == ('s2', 1)
 
         b.send(2)
-        assert check.recver.recv() == ('s1', 2)
-        assert check.recver.recv() == ('s2', 2)
+        assert check.recv() == ('s1', 2)
+        assert check.recv() == ('s2', 2)
 
         s1.close()
         b.send(3)
-        assert check.recver.recv() == ('s2', 3)
-        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+        assert check.recv() == ('s2', 3)
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
 
     def test_broadcast_pipe(self):
         h = vanilla.Hub()
@@ -483,7 +509,7 @@ class TestBroadcast(object):
 
         def subscriber(s, name):
             for item in s:
-                check.sender.send((name, item))
+                check.send((name, item))
 
         s1 = b.subscribe()
         s2 = b.subscribe()
@@ -492,8 +518,8 @@ class TestBroadcast(object):
         h.spawn(subscriber, s2, 's2')
         h.sleep(1)
 
-        assert check.recver.recv() == ('s1', True)
-        assert check.recver.recv() == ('s2', True)
+        assert check.recv() == ('s1', True)
+        assert check.recv() == ('s2', True)
 
 
 class TestValue(object):
@@ -506,15 +532,15 @@ class TestValue(object):
         @h.spawn
         def _():
             while True:
-                check.sender.send(v.recv())
+                check.send(v.recv())
 
-        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
         v.send(1)
-        assert check.recver.recv() == 1
-        assert check.recver.recv() == 1
+        assert check.recv() == 1
+        assert check.recv() == 1
 
         v.clear()
-        pytest.raises(vanilla.Timeout, check.recver.recv, timeout=0)
+        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
 
     def test_value_timeout(self):
         h = vanilla.Hub()

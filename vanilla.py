@@ -194,6 +194,20 @@ C = init_C()
 _Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
 
 
+class _Pipe(_Pipe):
+    def send(self, *a, **kw):
+        return self.sender.send(*a, **kw)
+
+    def recv(self, *a, **kw):
+        return self.recver.recv(*a, **kw)
+
+    def pipe(self, *a, **kw):
+        return self.recver.pipe(*a, **kw)
+
+    def map(self, *a, **kw):
+        return self.recver.map(*a, **kw)
+
+
 class Pipe(object):
     __slots__ = [
         'hub', 'recver', 'recver_current', 'sender', 'sender_current',
@@ -333,7 +347,19 @@ class Recver(End):
                 break
 
     def pipe(self, sender):
-        sender.connect(self)
+        if callable(sender):
+            pipe = self._pipe.hub.pipe()
+            self._pipe.hub.spawn(sender, self, pipe.sender)
+            return pipe.recver
+        else:
+            return sender.connect(self)
+
+    def map(self, f):
+        @self.pipe
+        def recver(recver, sender):
+            for item in recver:
+                sender.send(f(item))
+        return recver
 
 
 def buff(hub, size=0):
