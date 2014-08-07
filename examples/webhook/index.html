@@ -84,6 +84,10 @@
       text-align: center;
     }
 
+    .green {
+      color: #187347;
+    }
+
     .hide {
       display: none;
     }
@@ -110,9 +114,6 @@
   <div class="footer row shadow">
     <div id='status'></div>
     <script id='template-status' type='text/ractive'>
-      <div style="margin-right:10px;float:right">
-        {{ last < 5 ? '' : last + ' secs ago' }}
-      </div>
       <div class='{{status == "OK" ? "green" : ""}}'>{{status}}</div>
     </script>
   </div>
@@ -133,10 +134,7 @@
     var rstatus = new Ractive({
       el: 'status',
       template: '#template-status',
-      data: {
-        status: '...',
-        last: 0,
-      },
+      data: {status: '...',},
     });
 
     var WS = (function() {
@@ -157,7 +155,6 @@
         conn.onmessage = function(e) {
           var d = JSON.parse(e.data);
 					receive(d);
-          rstatus.set('last', 0);
         };
 
         conn.onclose = function() {
@@ -165,11 +162,6 @@
           setTimeout(reconnect, 1000);
         }
       }
-
-      /* update status for when we last heard from the server */
-      setInterval( function () {
-        rstatus.add('last', 1);
-      }, 1000);
 
       reconnect();
 
@@ -190,7 +182,7 @@
       if (push.commits) {
         _.each(push.commits, function(commit) {
           console.log(commit.author.username, commit.message);
-          commits.push({
+          commits.unshift({
             username: commit.author.username,
             message: commit.message,
             url: commit.url, })
