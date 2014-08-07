@@ -67,11 +67,12 @@
       width: 75px;
       font-size: 10pt;
       color: #8e8e8e;
-      display:table-cell
+      display:table-cell;
+      vertical-align:middle;
     }
 
     .card .message {
-       display:table-cell
+       display:table-cell;
     }
 
     .card a:hover .message {
@@ -141,7 +142,16 @@
       data: {status: '...',},
     });
 
-    var WS = (function() {
+    var rcommits = new Ractive({
+      el: 'commits',
+      noIntro: true,
+      template: '#template-commits',
+      data: {commits: commits},
+    });
+
+    var commits = [];
+
+    var ws = (function() {
       var conn;
 
       /* manage connection with the server */
@@ -158,7 +168,7 @@
 
         conn.onmessage = function(e) {
           var d = JSON.parse(e.data);
-          receive(d);
+          commits.unshift(d);
         };
 
         conn.onclose = function() {
@@ -170,36 +180,7 @@
       reconnect();
 
       return {};
-    });
-
-    var ws;
-    var commits = [];
-
-    var rcommits = new Ractive({
-      el: 'commits',
-      noIntro: true,
-      template: '#template-commits',
-      data: {commits: commits},
-    });
-
-    function receive(push) {
-      if (push.commits) {
-        _.each(push.commits, function(commit) {
-          console.log(commit.author.username, commit.message);
-          commits.unshift({
-            username: commit.author.username,
-            message: commit.message,
-            url: commit.url, })
-        });
-      }
-    }
-
-    $.get('/recent', function(pushes) {
-      _.each(pushes, receive);
-      // start up websocket
-      ws = WS();
-    });
-
+    })();
   </script>
 </body>
 </html>

@@ -40,17 +40,24 @@ def main():
     def _(request, response):
         data = request.consume()
         data = json.loads(data)
-        commits.send(data)
-        return 'OK'
 
-    @app.get('/recent')
-    def _(request, response):
-        response.headers['Content-Type'] = 'application/json'
-        return json.dumps(list(commits.recent))
+        print data
+        print "----"
+
+        if 'commits' in data:
+            for commit in data['commits']:
+                commits.send({
+                    'username': commit['author']['username'],
+                    'message': commit['message'],
+                    'url': commit['url'], })
+
+        return 'OK'
 
     @app.websocket('/')
     def _(ws):
         updates = commits.broadcast.subscribe()
+
+        ws.send(json.dumps(list(commits.recent)))
 
         while True:
             # TODO: this bit of the API is a work in progress
