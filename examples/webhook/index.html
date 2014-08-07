@@ -142,14 +142,14 @@
       data: {status: '...',},
     });
 
+    var commits = [];
+
     var rcommits = new Ractive({
       el: 'commits',
       noIntro: true,
       template: '#template-commits',
       data: {commits: commits},
     });
-
-    var commits = [];
 
     var ws = (function() {
       var conn;
@@ -164,11 +164,14 @@
 
         conn.onopen = function() {
           rstatus.set('status', 'OK');
+          if (commits.length) conn.send(commits[0]['pushed_at']);
+          else conn.send('0');
         }
 
         conn.onmessage = function(e) {
-          var d = JSON.parse(e.data);
-          commits.unshift(d);
+          var data = JSON.parse(e.data);
+          console.log(data);
+          commits.unshift(data);
         };
 
         conn.onclose = function() {

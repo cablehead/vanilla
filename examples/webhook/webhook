@@ -15,10 +15,16 @@ class Commits(object):
         self.recent = collections.deque()
 
     def send(self, commit):
+        print commit
         self.recent.append(commit)
         if len(self.recent) > 10:
             self.recent.popleft()
         self.broadcast.send(commit)
+
+    def since(self, stamp):
+        for commit in self.recent:
+            if stamp < commit['pushed_at']:
+                yield commit
 
 
 def main():
@@ -41,34 +47,37 @@ def main():
         data = request.consume()
         data = json.loads(data)
 
-        print data
-        print "----"
-
         if 'commits' in data:
             for commit in data['commits']:
                 commits.send({
                     'username': commit['author']['username'],
                     'message': commit['message'],
-                    'url': commit['url'], })
+                    'url': commit['url'],
+                    'pushed_at': data['repository']['pushed_at'], })
 
         return 'OK'
 
     @app.websocket('/')
     def _(ws):
-        updates = commits.broadcast.subscribe()
+        updates = None
 
-        ws.send(json.dumps(list(commits.recent)))
+        try:
+            since = int(ws.recv())
+            print since
+            updates = commits.broadcast.subscribe()
+            for commit in commits.since(since):
+                ws.send(json.dumps(commit))
 
-        while True:
-            # TODO: this bit of the API is a work in progress
-            try:
+            while True:
+                # TODO: this bit of the API is a work in progress
                 ch, data = h.select([ws.recver, updates])
-            except vanilla.Halt:
-                updates.close()
-                return
+                if ch == updates:
+                    ws.send(json.dumps(data))
 
-            if ch == updates:
-                ws.send(json.dumps(data))
+        except vanilla.Halt:
+            if updates:
+                updates.close()
+            return
 
     h.stop_on_term()
     print 'shutdown.'
