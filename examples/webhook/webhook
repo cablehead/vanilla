@@ -1,10 +1,24 @@
 #!/usr/bin/env python
 
+import collections
 import logging
+import json
 import sys
 import os
 
 import vanilla
+
+
+class Commits(object):
+    def __init__(self, hub):
+        self.broadcast = hub.broadcast()
+        self.recent = collections.deque()
+
+    def send(self, commit):
+        self.recent.append(commit)
+        if len(self.recent) > 10:
+            self.recent.popleft()
+        self.broadcast.send(commit)
 
 
 def main():
@@ -13,6 +27,8 @@ def main():
     print 'starting...'
     h = vanilla.Hub()
 
+    commits = Commits(h)
+
     app = h.http.bean(
         host='0.0.0.0',
         port=8000,
@@ -20,11 +36,32 @@ def main():
 
     app.static('/', 'index.html')
 
-    @app.post('/')
+    @app.post('/webhook')
     def _(request, response):
-        print "----"
-        print request.consume()
+        data = request.consume()
+        data = json.loads(data)
+        commits.send(data)
         return 'OK'
+
+    @app.get('/recent')
+    def _(request, response):
+        response.headers['Content-Type'] = 'application/json'
+        return json.dumps(list(commits.recent))
+
+    @app.websocket('/')
+    def _(ws):
+        updates = commits.broadcast.subscribe()
+
+        while True:
+            # TODO: this bit of the API is a work in progress
+            try:
+                ch, data = h.select([ws.recver, updates])
+            except vanilla.Halt:
+                updates.close()
+                return
+
+            if ch == updates:
+                ws.send(json.dumps(data))
 
     h.stop_on_term()
     print 'shutdown.'
