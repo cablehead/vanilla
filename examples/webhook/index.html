@@ -65,9 +65,13 @@
 
     .card .username {
       width: 70px;
-      display: inline-block;
       font-size: 10pt;
       color: #8e8e8e;
+      display:table-cell
+    }
+
+    .card .message {
+       display:table-cell
     }
 
     .card a:hover .message {
@@ -102,8 +106,8 @@
       <div intro='slide:{"duration":200,"easing":"ease-in"}' class='card'>
       <a href="{{url}}" target="_blank">
       <div>
-        <span class="username">{{username}}:</span>
-        <span class="message">{{message}}</span>
+        <div class="username">{{username}}:</div>
+        <div class="message">{{message}}</div>
       </div>
       </a>
       </div>
@@ -154,7 +158,7 @@
 
         conn.onmessage = function(e) {
           var d = JSON.parse(e.data);
-					receive(d);
+          receive(d);
         };
 
         conn.onclose = function() {
@@ -168,7 +172,7 @@
       return {};
     });
 
-		var ws;
+    var ws;
     var commits = [];
 
     var rcommits = new Ractive({
@@ -192,8 +196,8 @@
 
     $.get('/recent', function(pushes) {
       _.each(pushes, receive);
-			// start up websocket
-			ws = WS();
+      // start up websocket
+      ws = WS();
     });
 
   </script>
