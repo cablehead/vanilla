@@ -1,0 +1,209 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>Vanilla: Github Webhook</title>
+
+  <meta name="viewport" content="
+    width=device-width,
+    minimal-ui,
+    minimum-scale=1.0,
+    initial-scale=1.0,
+    user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <link href='http://fonts.googleapis.com/css?family=Roboto'
+    rel='stylesheet' type='text/css'>
+
+  <style>
+    html,body {
+      background: #666;
+      color: #4e4e4e;
+      font-family: -apple-system-font, 'Roboto', sans-serif;
+      margin:0px;
+      height: 100%;
+    }
+    a {
+      text-decoration: none;
+      color: #4e4e4e;
+    }
+
+    .row, .col { overflow: hidden; position: absolute; }
+    .row { left: 0; right: 0; }
+    .col { top: 0; bottom: 0; }
+    .scroll-x { overflow-x: auto; }
+    .scroll-y { overflow-y: auto; }
+
+    .body.row { top: 0px; bottom: 35px; }
+
+    .footer.row {
+      height: 35px;
+      bottom: 0;
+    }
+
+    #status {
+      padding:10px;
+      font-size: 8pt;
+      color: #bebebe;
+      background: #333;
+    }
+
+    .scrollable {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #commits .card {
+      border-bottom: 1px solid #eaeaea;
+    }
+
+    .card {
+      padding:20px;
+      font-size: 12pt;
+      background: #f5f5f5;
+    }
+
+    .card .username {
+      width: 70px;
+      display: inline-block;
+      font-size: 10pt;
+      color: #8e8e8e;
+    }
+
+    .card a:hover .message {
+      text-decoration: underline;
+    }
+
+    .shadow {
+      -moz-box-shadow: 0 0 5px #888;
+      -webkit-box-shadow: 0 0 5px#888;
+      box-shadow: 0 0 5px #888;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .hide {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id='commits' class='body row scroll-y scrollable'>
+    <script id='template-commits' type='text/ractive'>
+      {{#commits}}
+      <div intro='slide:{"duration":200,"easing":"ease-in"}' class='card'>
+      <a href="{{url}}" target="_blank">
+      <div>
+        <span class="username">{{username}}:</span>
+        <span class="message">{{message}}</span>
+      </div>
+      </a>
+      </div>
+      {{/commits}}
+    </script>
+  </div>
+
+  <div class="footer row shadow">
+    <div id='status'></div>
+    <script id='template-status' type='text/ractive'>
+      <div style="margin-right:10px;float:right">
+        {{ last < 5 ? '' : last + ' secs ago' }}
+      </div>
+      <div class='{{status == "OK" ? "green" : ""}}'>{{status}}</div>
+    </script>
+  </div>
+
+  <script src='http://cdn.ractivejs.org/latest/ractive.min.js'></script>
+  <script src='http://cdn.jsdelivr.net/ractive.transitions-slide/latest/ractive-transitions-slide.min.js'></script>
+  <script src='http://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.min.js'></script>
+  <script src='http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js'></script>
+
+  <script>
+    $(document).on('touchmove', function(event){
+      event.preventDefault();
+    });
+    $('.scrollable').on('touchmove', function(event) {
+      event.stopPropagation()
+    });
+
+    var rstatus = new Ractive({
+      el: 'status',
+      template: '#template-status',
+      data: {
+        status: '...',
+        last: 0,
+      },
+    });
+
+    var WS = (function() {
+      var conn;
+
+      /* manage connection with the server */
+      function reconnect() {
+        rstatus.set('status', 'reconnect...');
+
+        var uri = 'ws://' + document.domain;
+        if (location.port) uri += ':' + location.port;
+        conn = new WebSocket(uri);
+
+        conn.onopen = function() {
+          rstatus.set('status', 'OK');
+        }
+
+        conn.onmessage = function(e) {
+          var d = JSON.parse(e.data);
+					receive(d);
+          rstatus.set('last', 0);
+        };
+
+        conn.onclose = function() {
+          rstatus.set('status', 'disconnected');
+          setTimeout(reconnect, 1000);
+        }
+      }
+
+      /* update status for when we last heard from the server */
+      setInterval( function () {
+        rstatus.add('last', 1);
+      }, 1000);
+
+      reconnect();
+
+      return {};
+    });
+
+		var ws;
+    var commits = [];
+
+    var rcommits = new Ractive({
+      el: 'commits',
+      noIntro: true,
+      template: '#template-commits',
+      data: {commits: commits},
+    });
+
+    function receive(push) {
+      if (push.commits) {
+        _.each(push.commits, function(commit) {
+          console.log(commit.author.username, commit.message);
+          commits.push({
+            username: commit.author.username,
+            message: commit.message,
+            url: commit.url, })
+        });
+      }
+    }
+
+    $.get('/recent', function(pushes) {
+      _.each(pushes, receive);
+			// start up websocket
+			ws = WS();
+    });
+
+  </script>
+</body>
+</html>
