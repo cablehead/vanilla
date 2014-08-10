@@ -1,3 +1,12 @@
+### thoughts from Dataflow and Reactive Programming Systems:
+
+- Only want to activate a section of code if its outputs are available
+
+- Deemphasize pipes an instead emphasize code units
+
+- Bring back channels, they're an intuitive building block
+
+
 ### ways to send:
 
 - pipe: blocks on send, can only have one recver
