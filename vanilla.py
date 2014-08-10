@@ -244,6 +244,10 @@ class End(object):
         self.middle = pipe
 
     @property
+    def hub(self):
+        return self.middle.hub
+
+    @property
     def halted(self):
         return bool(self.middle.closed or self.other is None)
 
@@ -266,14 +270,14 @@ class End(object):
     def pause(self, timeout=-1):
         self.select()
         try:
-            _, ret = self.middle.hub.pause(timeout=timeout)
+            _, ret = self.hub.pause(timeout=timeout)
         finally:
             self.unselect()
         return ret
 
     def close(self):
         if self.other is not None and self.other_current is not None:
-            self.middle.hub.throw_to(self.other_current, Closed)
+            self.hub.throw_to(self.other_current, Closed)
         self.middle.closed = True
 
 
@@ -301,9 +305,9 @@ class Sender(End):
             self.pause(timeout=timeout)
 
         if isinstance(item, Exception):
-            return self.middle.hub.throw_to(self.other_current, item)
+            return self.hub.throw_to(self.other_current, item)
 
-        return self.middle.hub.switch_to(self.other_current, self.other, item)
+        return self.hub.switch_to(self.other_current, self.other, item)
 
     def connect(self, recver):
         recver.middle.recver = self.middle.recver
@@ -351,8 +355,8 @@ class Recver(End):
 
     def pipe(self, sender):
         if callable(sender):
-            pipe = self.middle.hub.pipe()
-            self.middle.hub.spawn(sender, self, pipe.sender)
+            pipe = self.hub.pipe()
+            self.hub.spawn(sender, self, pipe.sender)
             return pipe.recver
         else:
             return sender.connect(self)
@@ -365,7 +369,7 @@ class Recver(End):
         return recver
 
     def consume(self, f):
-        @self.middle.hub.spawn
+        @self.hub.spawn
         def _():
             for item in self:
                 f(item)
