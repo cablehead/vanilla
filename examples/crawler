@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+
+"""
+Usage:
+    crawler <uri> [-n num_threads] [-d max_depth]
+
+Options
+    -n num_threads  Number of concurrent threads [default: 4]
+    -d max_depth    Default link depth to crawl  [default: 2]
+"""
+
+
+import functools
+import urlparse
+import sys
+
+from bs4 import BeautifulSoup
+from bs4 import SoupStrainer
+from docopt import docopt
+
+import vanilla
+
+
+def fetch_links(h, uri, depth, ret):
+    try:
+        print uri, depth
+        response = h.http.get(uri).recv()
+        assert response.status.code == 200
+        body = response.consume()
+
+        links = BeautifulSoup(body, parse_only=SoupStrainer('a'))
+
+        data = []
+        for link in links:
+            if link.name == 'a':
+                if 'href' in link.attrs:
+                    data.append(
+                        (urlparse.urljoin(uri, link.attrs['href']), depth+1))
+
+        ret.send(data)
+
+    except:
+        ret.send([])
+
+
+def main(argv):
+    uri = argv['<uri>']
+    num_threads = int(argv['-n'])
+    max_depth = int(argv['-d'])
+
+    h = vanilla.Hub()
+
+    workers = []
+
+    q = h.channel()
+    q.sender.send((uri, 0))
+    seen = {uri: True}
+
+    count = 0
+
+    while workers or q.recver.ready:
+
+        # only look to the queue for more work, if we haven't reached our
+        # worker limit
+        if len(workers) < num_threads:
+            ch, data = h.select([q.recver] + workers)
+        else:
+            ch, data = h.select(workers)
+
+        if ch == q.recver:
+            count += 1
+            uri, depth = data
+            worker = h.producer(functools.partial(fetch_links, h, uri, depth))
+            workers.append(worker)
+
+        else:
+            workers.remove(ch)
+            for uri, depth in data:
+                if uri not in seen and depth <= max_depth:
+                    seen[uri] = True
+                    q.send((uri, depth))
+
+    print 'count:', count
+
+
+if __name__ == '__main__':
+    argv = docopt(__doc__)
+    sys.exit(main(argv))
