@@ -613,6 +613,10 @@ class Hub(object):
     def buff(self, size=0):
         return buff(self, size)
 
+    # TODO:
+    def channel(self, size=0):
+        return buff(self, size)
+
     def broadcast(self):
         return Broadcast(self)
 
@@ -1077,6 +1081,13 @@ class HTTP(object):
 
     def connect(self, url):
         return HTTPClient(self.hub, url)
+
+    # TODO: hacking in convenience for example, still need to add test
+    # TODO: ensure connection is closed after the get is done
+    def get(self, uri, params=None, headers=None):
+        parsed = urlparse.urlsplit(uri)
+        conn = self.connect('%s://%s' % (parsed.scheme, parsed.netloc))
+        return conn.get(parsed.path, params=params, headers=headers)
 
     def listen(
             self,
