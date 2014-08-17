@@ -191,10 +191,10 @@ def init_C():
 C = init_C()
 
 
-_Pipe = collections.namedtuple('Pipe', ['sender', 'recver'])
+Paired = collections.namedtuple('Paired', ['sender', 'recver'])
 
 
-class _Pipe(_Pipe):
+class Paired(Paired):
     def send(self, *a, **kw):
         return self.sender.send(*a, **kw)
 
@@ -229,7 +229,7 @@ class Pipe(object):
         self.sender = weakref.ref(sender, self.on_abandoned)
         self.sender_current = None
 
-        return _Pipe(sender, recver)
+        return Paired(sender, recver)
 
     def on_abandoned(self, *a, **kw):
         current = self.recver_current or self.sender_current
@@ -414,7 +414,7 @@ def buff(hub, size=0):
     in_ = hub.pipe()
     out = hub.pipe()
     hub.spawn(main, in_.recver, out.sender, size)
-    return _Pipe(in_.sender, out.recver)
+    return Paired(in_.sender, out.recver)
 
 
 class DealerSender(Sender):
@@ -445,7 +445,7 @@ class Dealer(object):
         sender.__class__ = DealerSender
         recver.__class__ = DealerRecver
         sender.waiters = recver.waiters = collections.deque()
-        return _Pipe(sender, recver)
+        return Paired(sender, recver)
 
 
 class Router(object):
