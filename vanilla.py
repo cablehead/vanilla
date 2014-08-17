@@ -417,6 +417,37 @@ def buff(hub, size=0):
     return _Pipe(in_.sender, out.recver)
 
 
+class DealerSender(Sender):
+    def send(self, item, timeout=-1):
+        if self.waiters:
+            waiter = self.waiters.popleft()
+            self.hub.switch_to(waiter, item)
+        else:
+            super(DealerSender, self).send(item, timeout=timeout)
+
+
+class DealerRecver(Recver):
+    def recv(self, timeout=-1):
+        if super(DealerRecver, self).ready:
+            return super(DealerRecver, self).recv()
+
+        self.waiters.append(getcurrent())
+        try:
+            return self.hub.pause(timeout=timeout)
+        except Timeout:
+            self.waiters.remove(getcurrent())
+            raise
+
+
+class Dealer(object):
+    def __new__(cls, hub):
+        sender, recver = hub.pipe()
+        sender.__class__ = DealerSender
+        recver.__class__ = DealerRecver
+        sender.waiters = recver.waiters = collections.deque()
+        return _Pipe(sender, recver)
+
+
 class Router(object):
     def __init__(self, hub):
         self.hub = hub
@@ -496,6 +527,10 @@ class Value(object):
             self.waiters.append(getcurrent())
             self.hub.pause(timeout=timeout)
         return self.value
+
+    @property
+    def ready(self):
+        return hasattr(self, 'value')
 
     def clear(self):
         delattr(self, 'value')
@@ -623,6 +658,9 @@ class Hub(object):
     def value(self):
         return Value(self)
 
+    def dealer(self):
+        return Dealer(self)
+
     def router(self):
         return Router(self)
 
@@ -653,15 +691,13 @@ class Hub(object):
         if timeout > -1:
             if isinstance(resume, Timeout):
                 raise resume
-
             # since we didn't timeout, remove ourselves from scheduled
             self.scheduled.remove(item)
 
-        """
-        # TODO: clean up stopped handling here
-        if self.stopped:
-            raise Closed('closed')
-        """
+        # TODO: rework Value's is set test to be more natural
+        if self.stopped.ready:
+            raise Stop(
+                'Hub stopped while we were paused. There must be a deadlock.')
 
         return resume
 

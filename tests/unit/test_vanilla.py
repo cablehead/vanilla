@@ -93,6 +93,11 @@ class TestHub(object):
 
 
 class TestPipe(object):
+    def test_deadlock(self):
+        h = vanilla.Hub()
+        p = h.pipe()
+        pytest.raises(vanilla.Stop, p.send, 1)
+
     def test_close_recver(self):
         h = vanilla.Hub()
 
@@ -432,6 +437,44 @@ class TestPulse(object):
         pytest.raises(vanilla.Timeout, trigger.recv, timeout=0)
 
         h.stop()
+
+
+class TestDealer(object):
+    def test_send_then_recv(self):
+        h = vanilla.Hub()
+        d = h.dealer()
+        h.spawn(d.send, 1)
+        assert d.recv() == 1
+
+    def test_recv_then_send(self):
+        h = vanilla.Hub()
+        d = h.dealer()
+
+        q = h.buff(10)
+
+        h.spawn(lambda: q.send(d.recv()))
+        h.spawn(lambda: q.send(d.recv()))
+        h.spawn(lambda: q.send(d.recv()))
+        h.sleep(1)
+
+        d.send(1)
+        assert q.recv() == 1
+        d.send(2)
+        d.send(3)
+        assert q.recv() == 2
+        assert q.recv() == 3
+
+    def test_send_timeout(self):
+        h = vanilla.Hub()
+        d = h.dealer()
+        pytest.raises(vanilla.Timeout, d.send, 1, timeout=10)
+
+    def test_recv_timeout(self):
+        h = vanilla.Hub()
+        d = h.dealer()
+        pytest.raises(vanilla.Timeout, d.recv, timeout=10)
+        # assert that waiters is cleaned up after timeout
+        assert not d.recver.waiters
 
 
 class TestRouter(object):
