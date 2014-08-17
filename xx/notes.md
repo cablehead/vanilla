@@ -1,3 +1,15 @@
+### Major Primitives
+
+- Pipe
+- Queue
+- Dealer
+- Router
+- Channel
+- Broadcast
+- Value
+- State
+
+
 ### thoughts from Dataflow and Reactive Programming Systems:
 
 - Only want to activate a section of code if its outputs are available
