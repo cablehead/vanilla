@@ -605,6 +605,9 @@ class Hub(object):
 
         self.loop = greenlet(self.main)
 
+    def consul(self):
+        return Consul(self)
+
     def pipe(self):
         return Pipe(self)
 
@@ -1312,6 +1315,9 @@ class HTTPClient(HTTPSocket):
     def post(self, path='/', params=None, headers=None, data=''):
         return self.request('POST', path, params, headers, data)
 
+    def put(self, path='/', params=None, headers=None, data=''):
+        return self.request('PUT', path, params, headers, data)
+
     def websocket(self, path='/', params=None, headers=None):
         key = base64.b64encode(uuid.uuid4().bytes)
 
@@ -1722,3 +1728,80 @@ class HTTPBean(object):
                 path,
                 f=functools.partial(self._static, target),
                 conditions={'method': ['GET']})
+
+
+# Consul ###################################################################
+
+"""
+Vanilla Consul Client. This WILL move to another repo. Just keeping everything
+together until the API stabilizes.
+"""
+
+import json
+
+
+class Consul(object):
+    def __init__(self, hub):
+        self.hub = hub
+        self.conn = hub.http.connect('http://localhost:8500')
+        self.agent = Consul.Agent(self.hub, self.conn)
+        self.health = Consul.Health(self.hub, self.conn)
+
+    class Agent(object):
+        def __init__(self, hub, conn):
+            self.hub = hub
+            self.conn = conn
+            self.service = Consul.Agent.Service(self.hub, self.conn)
+            self.check = Consul.Agent.Check(self.hub, self.conn)
+
+        def services(self):
+            return self.conn.get('/v1/agent/services')
+
+        class Service(object):
+            def __init__(self, hub, conn):
+                self.hub = hub
+                self.conn = conn
+
+            def register(
+                self, name, service_id=None, port=None,
+                    tags=None, check=None, interval=None, ttl=None):
+
+                payload = {
+                    'id': service_id,
+                    'name': name,
+                    'port': port,
+                    'tags': tags,
+                    'check': {
+                        'script': check,
+                        'interval': interval,
+                        'ttl': ttl, }}
+
+                return self.conn.put(
+                    '/v1/agent/service/register', data=json.dumps(payload))
+
+            def deregister(self, service_id):
+                return self.conn.get(
+                    '/v1/agent/service/deregister/%s' % service_id)
+
+        class Check(object):
+            def __init__(self, hub, conn):
+                self.hub = hub
+                self.conn = conn
+
+            def pass_(self, check_id):
+                return self.conn.get('/v1/agent/check/pass/%s' % check_id)
+
+    class Health(object):
+        def __init__(self, hub, conn):
+            self.hub = hub
+            self.conn = conn
+
+        def service(self, service):
+            return self.conn.get('/v1/health/service/%s' % service)
+
+        def checks(self, service, index=None):
+            params = {}
+            if index:
+                params['index'] = index
+            return self.conn.get(
+                '/v1/health/checks/%s' % service, params=params)
