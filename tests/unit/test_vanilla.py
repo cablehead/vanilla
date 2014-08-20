@@ -777,6 +777,38 @@ class TestHTTP(object):
         assert response.status.code == 200
         assert response.consume() == 'toby'
 
+    def test_put(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            return request.method + request.consume()
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        response = conn.put('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'PUT'
+
+        response = conn.put('/', data='toby').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'PUTtoby'
+
+    def test_delete(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            return request.method
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        response = conn.delete('/').recv()
+        assert response.status.code == 200
+        assert response.consume() == 'DELETE'
+
     def test_404(self):
         h = vanilla.Hub()
 
