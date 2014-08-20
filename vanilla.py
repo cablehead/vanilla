@@ -1318,6 +1318,9 @@ class HTTPClient(HTTPSocket):
     def put(self, path='/', params=None, headers=None, data=''):
         return self.request('PUT', path, params, headers, data)
 
+    def delete(self, path='/', params=None, headers=None):
+        return self.request('DELETE', path, params, headers, None)
+
     def websocket(self, path='/', params=None, headers=None):
         key = base64.b64encode(uuid.uuid4().bytes)
 
@@ -1744,8 +1747,63 @@ class Consul(object):
     def __init__(self, hub):
         self.hub = hub
         self.conn = hub.http.connect('http://localhost:8500')
+        self.dumps, self.loads = json.dumps, json.loads
+
         self.agent = Consul.Agent(self.hub, self.conn)
         self.health = Consul.Health(self.hub, self.conn)
+        self.kv = Consul.KV(self)
+
+    class KV(object):
+        def __init__(self, agent):
+            self.agent = agent
+
+        def get(self, key, recurse=False):
+            assert not key.startswith('/')
+
+            params = {}
+            if recurse:
+                params['recurse'] = '1'
+            ch = self.agent.conn.get('/v1/kv/%s' % key, params=params)
+
+            @ch.map
+            def _(response):
+                data = response.consume()
+                if response.status.code == 404:
+                    # TODO: pretty sure this should raise
+                    return None
+                data = json.loads(data)
+                for item in data:
+                    item['Value'] = self.agent.loads(
+                        base64.b64decode(item['Value']))
+                if not recurse:
+                    data = data[0]
+                return response.headers['X-Consul-Index'], data
+            return _
+
+        def put(self, key, value):
+            assert not key.startswith('/')
+
+            value = self.agent.dumps(value)
+            ch = self.agent.conn.put('/v1/kv/%s' % key, data=value)
+
+            @ch.map
+            def _(response):
+                return json.loads(response.consume())
+            return _
+
+        def delete(self, key, recurse=False):
+            assert not key.startswith('/')
+
+            params = {}
+            if recurse:
+                params['recurse'] = '1'
+            ch = self.agent.conn.delete('/v1/kv/%s' % key, params=params)
+
+            @ch.map
+            def _(response):
+                response.consume()
+                return (response.status.code == 200)
+            return _
 
     class Agent(object):
         def __init__(self, hub, conn):
@@ -1788,7 +1846,7 @@ class Consul(object):
                 self.hub = hub
                 self.conn = conn
 
-            def pass_(self, check_id):
+            def ttl_pass(self, check_id):
                 return self.conn.get('/v1/agent/check/pass/%s' % check_id)
 
     class Health(object):

@@ -1,10 +1,41 @@
 import vanilla
 
 import json
+import uuid
+
 # from pprint import pprint as p
+
+import logging
+logging.basicConfig()
 
 
 class TestConsul(object):
+    def test_kv(self):
+        h = vanilla.Hub()
+        c = h.consul()
+
+        key = uuid.uuid4().hex
+        assert c.kv.get(key).recv() is None
+
+        assert c.kv.put(key, 'bar').recv()
+        index, data = c.kv.get(key).recv()
+        assert data['Value'] == 'bar'
+        index, data = c.kv.get(key, recurse=True).recv()
+        assert [x['Value'] for x in data] == ['bar']
+
+        assert c.kv.put(key+'1', 'bar1').recv()
+        assert c.kv.put(key+'2', 'bar2').recv()
+        index, data = c.kv.get(key, recurse=True).recv()
+        assert sorted([x['Value'] for x in data]) == ['bar', 'bar1', 'bar2']
+
+        assert c.kv.delete(key).recv()
+        assert c.kv.get(key).recv() is None
+        index, data = c.kv.get(key, recurse=True).recv()
+        assert sorted([x['Value'] for x in data]) == ['bar1', 'bar2']
+
+        assert c.kv.delete(key, recurse=True).recv()
+        assert c.kv.get(key, recurse=True).recv() is None
+
     def test_connect(self):
         print
         print
@@ -36,6 +67,8 @@ class TestConsul(object):
         print
         """
 
+        return
+
         @h.spawn
         def _():
             c = h.consul()
@@ -54,6 +87,6 @@ class TestConsul(object):
         h.sleep(1000)
 
         c = h.consul()
-        c.agent.check.pass_('service:n2').recv()
+        c.agent.check.ttl_pass('service:n2').recv()
 
         h.sleep(15000)
