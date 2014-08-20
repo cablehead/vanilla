@@ -57,7 +57,7 @@ http://cablehead.viewdocs.io/vanilla
 
 The Twisted Project and the entire Twisted community for the strong grounding
 in [Evented Async][]. Libor Michalek and Slide Inc for showing me using [Python
-coroutines][] at phenomenal scale isn't completely insane. Mike Johnson and
+coroutines][] at phenomenal scale isn't completely insane. Mike Johnston and
 Fred Cheng for [Simplenote][], [Simperium][], the chance to experiment with how
 apps will work with realtime APIs and for making it possible for me to live in
 San Francisco. [Littleinc][] for giving me a chance to send a lot of messages
