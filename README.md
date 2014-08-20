@@ -62,8 +62,8 @@ Fred Cheng for [Simplenote][], [Simperium][], the chance to experiment with how
 apps will work with realtime APIs and for making it possible for me to live in
 San Francisco. [Littleinc][] for giving me a chance to send a lot of messages
 and to open source [this project][] which I started working on while there.
-Justin Rosenthal for believing in me, 30% of time. Andres Buritica who did a
-lot of the early HTTP and UDP fragment (not pushed just yet!) work and Alison
+Justin Rosenthal for believing in me, 30% of the time. Andres Buritica who did
+a lot of the early HTTP and UDP fragment (not pushed just yet!) work and Alison
 Kosinski, the coolest fiancee in the world.
 
 [Evented Async]:
