@@ -448,8 +448,8 @@ class TestDealer(object):
 
     def test_recv_then_send(self):
         h = vanilla.Hub()
-        d = h.dealer()
 
+        d = h.dealer()
         q = h.queue(10)
 
         h.spawn(lambda: q.send(d.recv()))
@@ -475,6 +475,42 @@ class TestDealer(object):
         pytest.raises(vanilla.Timeout, d.recv, timeout=10)
         # assert that waiters is cleaned up after timeout
         assert not d.recver.current
+
+    def test_send_select(self):
+        h = vanilla.Hub()
+        d = h.dealer()
+
+        @h.spawn
+        def _():
+            ch, _ = h.select([d.sender])
+            assert ch == d.sender
+            d.send(1)
+
+        h.sleep(1)
+        assert d.recv() == 1
+
+    def test_recv_select(self):
+        h = vanilla.Hub()
+
+        d = h.dealer()
+        q = h.queue(10)
+
+        def selector():
+            ch, item = h.select([d.recver])
+            assert ch == d.recver
+            q.send(item)
+
+        h.spawn(selector)
+        h.spawn(selector)
+        h.spawn(selector)
+        h.sleep(1)
+
+        d.send(1)
+        assert q.recv() == 1
+        d.send(2)
+        d.send(3)
+        assert q.recv() == 2
+        assert q.recv() == 3
 
 
 class TestRouter(object):
