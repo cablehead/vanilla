@@ -3,9 +3,9 @@
 #### Pipe
 
 ```
-          +------+
-  send -> | Pipe | -> recv
-          +------+
+           +------+
+  send --> | Pipe | --> recv
+           +------+
 ```
 
 The most basic primitive is the Pipe. A Pipe can have exactly one sender and
@@ -35,10 +35,10 @@ The following is OK as the send is spawned to a background green thread:
 #### Queue
 
 ```
-            +----------+
-  send ---> |  Queue   |
-            | (buffer) | ---> recv
-            +----------+
+           +----------+
+  send --> |  Queue   |
+           | (buffer) | --> recv
+           +----------+
 ```
 
 A Queue may also only have exactly one sender and recver. A Queue however has a
