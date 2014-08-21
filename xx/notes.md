@@ -1,4 +1,4 @@
-### Major Primitives
+### Message Passing Primitives
 
 #### Pipe
 
