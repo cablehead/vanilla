@@ -76,3 +76,29 @@ robined to waiting recvers on a first come first serve basis.
     >>> d.send(1)
     >>> d.send(2)
 ```
+
+#### Router
+
+```
+  send --\    +--------+
+          +-> | Router | --> recv
+  send --/    +--------+
+```
+
+A Router has exactly one recver but can have many senders. It has no buffer, so
+sends and recvs block until a corresponding thread is ready. Sends are accepted
+on a first come first servce basis.
+
+```
+    >>> h = vanilla.Hub()
+    >>> r = h.router()
+    >>> h.spawn(r.send, 3)
+    >>> h.spawn(r.send, 2)
+    >>> h.spawn(r.send, 1)
+    >>> r.recv()
+    3
+    >>> r.recv()
+    2
+    >>> r.recv()
+    1
+```
