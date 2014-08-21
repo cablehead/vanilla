@@ -417,33 +417,31 @@ def buff(hub, size=0):
     return Paired(in_.sender, out.recver)
 
 
-class DealerSender(Sender):
-    def send(self, item, timeout=-1):
-        if self.waiters:
-            waiter = self.waiters.popleft()
-            self.hub.switch_to(waiter, item)
-        else:
-            super(DealerSender, self).send(item, timeout=timeout)
-
-
-class DealerRecver(Recver):
-    def recv(self, timeout=-1):
-        if super(DealerRecver, self).ready:
-            return super(DealerRecver, self).recv()
-
-        self.waiters.append(getcurrent())
-        try:
-            return self.hub.pause(timeout=timeout)
-        except Timeout:
-            self.waiters.remove(getcurrent())
-            raise
-
-
 class Dealer(object):
+    class Sender(Sender):
+        def send(self, item, timeout=-1):
+            if self.waiters:
+                waiter = self.waiters.popleft()
+                self.hub.switch_to(waiter, item)
+            else:
+                super(Dealer.Sender, self).send(item, timeout=timeout)
+
+    class Recver(Recver):
+        def recv(self, timeout=-1):
+            if super(Dealer.Recver, self).ready:
+                return super(Dealer.Recver, self).recv()
+
+            self.waiters.append(getcurrent())
+            try:
+                return self.hub.pause(timeout=timeout)
+            except Timeout:
+                self.waiters.remove(getcurrent())
+                raise
+
     def __new__(cls, hub):
         sender, recver = hub.pipe()
-        sender.__class__ = DealerSender
-        recver.__class__ = DealerRecver
+        sender.__class__ = Dealer.Sender
+        recver.__class__ = Dealer.Recver
         sender.waiters = recver.waiters = collections.deque()
         return Paired(sender, recver)
 
