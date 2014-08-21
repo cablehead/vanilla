@@ -3,8 +3,9 @@
 > *If Go and ZeroMQ had a baby, and that baby grew up and started dating
 > PyPy, and they had a baby, it might look like Vanilla.*
 
-* [Overview](#overview)
-* [Tutorial](/vanilla/tutorial)
+- [Overview](#overview)
+- [Message passing primitives](/vanilla/primitives)
+- [Tutorial](/vanilla/tutorial)
 
 ## Example
 
