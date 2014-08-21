@@ -257,7 +257,7 @@ class End(object):
             raise Closed
         if self.other is None:
             raise Abandoned
-        return self.other_current is not None
+        return self.other.current is not None
 
     def select(self, current=None):
         assert self.current is None
@@ -276,8 +276,8 @@ class End(object):
         return ret
 
     def close(self):
-        if self.other is not None and self.other_current is not None:
-            self.hub.throw_to(self.other_current, Closed)
+        if self.other is not None and self.other.current is not None:
+            self.hub.throw_to(self.other.current, Closed)
         self.middle.closed = True
 
 
@@ -294,10 +294,6 @@ class Sender(End):
     def other(self):
         return self.middle.recver()
 
-    @property
-    def other_current(self):
-        return self.middle.recver_current
-
     def send(self, item, timeout=-1):
         # only allow one send at a time
         assert self.current is None
@@ -305,9 +301,9 @@ class Sender(End):
             self.pause(timeout=timeout)
 
         if isinstance(item, Exception):
-            return self.hub.throw_to(self.other_current, item)
+            return self.hub.throw_to(self.other.current, item)
 
-        return self.hub.switch_to(self.other_current, self.other, item)
+        return self.hub.switch_to(self.other.current, self.other, item)
 
     def connect(self, recver):
         recver.middle.recver = self.middle.recver
@@ -329,10 +325,6 @@ class Recver(End):
     def other(self):
         return self.middle.sender()
 
-    @property
-    def other_current(self):
-        return self.middle.sender_current
-
     def recv(self, timeout=-1):
         # only allow one recv at a time
         assert self.current is None
@@ -340,7 +332,7 @@ class Recver(End):
         if self.ready:
             self.current = getcurrent()
             # switch directly, as we need to pause
-            _, ret = self.other_current.switch(self.other, None)
+            _, ret = self.other.current.switch(self.other, None)
             self.current = None
             return ret
 
