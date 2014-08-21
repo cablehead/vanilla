@@ -1,5 +1,5 @@
-- Dealer
-- Router
+## Major Primitives to Document still
+
 - Channel
 - Broadcast
 - Value
@@ -21,7 +21,7 @@
 
 - Only want to activate a section of code if its outputs are available
 
-- Deemphasize pipes an instead emphasize code units
+- Deemphasize pipes and instead emphasize code units
 
 - Bring back channels, they're an intuitive building block
 
