@@ -49,7 +49,7 @@ becomes full.
     >>> h = vanilla.Hub()
     >>> q = h.queue(1)
     >>> p.send(1)        # safe from deadlock
-    >>> # p.send(1)      # this would deadlock however, as the queue only has a
+    >>> # p.send(1)      # this would deadlock however as the queue only has a
                          # buffer size of 1
     >>> p.recv()
     1
