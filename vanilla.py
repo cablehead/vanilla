@@ -375,8 +375,8 @@ class Recver(End):
                 f(item)
 
 
-def buff(hub, size=0):
-    buff = collections.deque()
+def queue(hub, size=0):
+    queue = collections.deque()
 
     def main(recver, sender, size):
         while True:
@@ -387,7 +387,7 @@ def buff(hub, size=0):
                 recver.close()
                 return
 
-            if buff:
+            if queue:
                 watch.append(sender)
 
             else:
@@ -396,7 +396,7 @@ def buff(hub, size=0):
                     sender.close()
                     return
 
-            if not recver.halted and (size <= 0 or len(buff) < size):
+            if not recver.halted and (size <= 0 or len(queue) < size):
                 watch.append(recver)
 
             try:
@@ -405,10 +405,10 @@ def buff(hub, size=0):
                 continue
 
             if ch == recver:
-                buff.append(item)
+                queue.append(item)
 
             elif ch == sender:
-                item = buff.popleft()
+                item = queue.popleft()
                 sender.send(item)
 
     in_ = hub.pipe()
@@ -646,12 +646,12 @@ class Hub(object):
         sender.trigger = functools.partial(sender.send, True)
         return sender
 
-    def buff(self, size=0):
-        return buff(self, size)
+    def queue(self, size=0):
+        return queue(self, size)
 
     # TODO:
     def channel(self, size=0):
-        return buff(self, size)
+        return queue(self, size)
 
     def broadcast(self):
         return Broadcast(self)
@@ -1243,7 +1243,7 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
-        self.responses, recver = self.hub.buff()
+        self.responses, recver = self.hub.queue()
         recver.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):

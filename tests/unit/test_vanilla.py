@@ -387,10 +387,10 @@ class TestPipe(object):
         assert pipe.sender() is None
 
 
-class TestBuff(object):
-    def test_buff(self):
+class TestQueue(object):
+    def test_queue(self):
         h = vanilla.Hub()
-        b = h.buff(2)
+        b = h.queue(2)
 
         b.send(1, timeout=0)
         b.send(2, timeout=0)
@@ -404,9 +404,9 @@ class TestBuff(object):
         gc.collect()
         h.sleep(1)
 
-    def test_buff_close_sender(self):
+    def test_queue_close_sender(self):
         h = vanilla.Hub()
-        sender, recver = h.buff(2)
+        sender, recver = h.queue(2)
 
         sender.send(1, timeout=0)
         sender.send(2, timeout=0)
@@ -450,7 +450,7 @@ class TestDealer(object):
         h = vanilla.Hub()
         d = h.dealer()
 
-        q = h.buff(10)
+        q = h.queue(10)
 
         h.spawn(lambda: q.send(d.recv()))
         h.spawn(lambda: q.send(d.recv()))
@@ -522,7 +522,7 @@ class TestBroadcast(object):
         h = vanilla.Hub()
 
         b = h.broadcast()
-        check = h.buff(10)
+        check = h.queue(10)
 
         def subscriber(s, name):
             for item in s:
@@ -556,7 +556,7 @@ class TestBroadcast(object):
         source = h.pulse(20)
         source.pipe(b)
 
-        check = h.buff(10)
+        check = h.queue(10)
 
         def subscriber(s, name):
             for item in s:
