@@ -204,6 +204,9 @@ class Paired(Paired):
     def pipe(self, *a, **kw):
         return self.recver.pipe(*a, **kw)
 
+    def connect(self, *a, **kw):
+        return self.sender.connect(*a, **kw)
+
     def map(self, *a, **kw):
         return self.recver.map(*a, **kw)
 
@@ -438,40 +441,28 @@ class Dealer(object):
 
 
 class Router(object):
-    def __init__(self, hub):
-        self.hub = hub
-        self.inputs = []
-        self.add, recver = hub.pipe()
-        sender, self.recver = hub.pipe()
-        hub.spawn(self.main, recver, sender)
+    class Sender(Sender):
+        def select(self):
+            assert getcurrent() not in self.current
+            self.current.append(getcurrent())
 
-    def main(self, recver, sender):
-        while True:
-            try:
-                ch, item = self.hub.select([recver]+self.inputs)
-            except Halt:
-                if self.add.halted:
-                    # shutdown
-                    for x in self.inputs:
-                        x.close()
-                    return
-                self.inputs = [x for x in self.inputs if not x.halted]
-                continue
+        def unselect(self):
+            self.current.remove(getcurrent())
 
-            if ch == recver:
-                self.inputs.append(item)
-            else:
-                sender.send(item)
+        @property
+        def peak(self):
+            return self.current[0]
 
-    def connect(self, recver):
-        self.add.send(recver)
+        def abandoned(self):
+            waiters = list(self.current)
+            for current in waiters:
+                self.hub.throw_to(current, Abandoned)
 
-    def recv(self):
-        return self.recver.recv()
-
-    def close(self):
-        self.recver.close()
-        self.add.close()
+    def __new__(cls, hub):
+        sender, recver = hub.pipe()
+        sender.__class__ = Router.Sender
+        sender.current = collections.deque()
+        return Paired(sender, recver)
 
 
 class Broadcast(object):
@@ -1005,13 +996,13 @@ class Signal(object):
         self.mapper = {}
 
     def subscribe(self, *signals):
-        ret = self.hub.router()
+        router = self.hub.router()
         for num in signals:
             if num not in self.mapper:
                 self.mapper[num] = self.hub.broadcast()
-            self.mapper[num].subscribe().pipe(ret)
+            self.mapper[num].subscribe().pipe(router)
         self.reset()
-        return ret
+        return router.recver
 
     def reset(self):
         if self.count == len(self.mapper):

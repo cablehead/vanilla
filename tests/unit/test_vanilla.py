@@ -289,10 +289,10 @@ class TestPipe(Abandoned):
         p1 = h.pipe()
         p2 = h.pipe()
 
-        p1.recver.pipe(p2.sender)
+        p1.pipe(p2)
 
-        h.spawn(p1.sender.send, 1)
-        assert p2.recver.recv() == 1
+        h.spawn(p1.send, 1)
+        assert p2.recv() == 1
 
     def test_pipe_to_function(self):
         h = vanilla.Hub()
@@ -512,44 +512,36 @@ class TestDealer(Abandoned):
         assert q.recv() == 3
 
 
-class TestRouter(object):
-    def test_router(self):
+class TestRouter(Abandoned):
+    def _primitive(self, hub):
+        return hub.router()
+
+    def test_send_then_recv(self):
         h = vanilla.Hub()
         r = h.router()
 
-        p1 = h.pipe()
-        p2 = h.pipe()
-
-        r.connect(p1.recver)
-        r.connect(p2.recver)
-
-        p1.sender.send(1)
-        assert r.recv() == 1
-        p2.sender.send(2)
-        assert r.recv() == 2
-
-        p2.sender.close()
+        h.spawn(r.send, 3)
+        h.spawn(r.send, 2)
+        h.spawn(r.send, 1)
         h.sleep(1)
-        p1.sender.send(1)
+
+        assert r.recv() == 3
+        assert r.recv() == 2
         assert r.recv() == 1
 
-        r.close()
-        pytest.raises(vanilla.Closed, p1.sender.send, 1)
-
-    def test_router_pipe(self):
+    def test_recv_then_send(self):
         h = vanilla.Hub()
 
-        p1 = h.pulse(10, item=1)
-        h.sleep(5)
-        p2 = h.pulse(10, item=2)
-
         r = h.router()
+        q = h.queue(10)
 
-        p1.pipe(r)
-        p2.pipe(r)
+        @h.spawn
+        def _():
+            q.send(r.recv())
 
-        assert r.recv() == 1
-        assert r.recv() == 2
+        h.sleep(1)
+        r.send(1)
+        assert q.recv() == 1
 
 
 class TestBroadcast(object):
@@ -707,6 +699,7 @@ class TestDescriptor(object):
 
 
 class TestSignal(object):
+    # TODO: test abandoned
     def test_signal(self):
         h = vanilla.Hub()
 
