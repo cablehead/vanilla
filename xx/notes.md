@@ -1,6 +1,39 @@
 ### Major Primitives
 
-- Pipe
+#### Pipe
+
+```
+            +------+
+            |      |
+  send ---> | Pipe | ---> recv
+            |      |
+            +------+
+```
+
+The most basic primitive is the Pipe. A Pipe can have exactly one sender and
+exactly one recver. A Pipe has no buffering, so send and recvs will block until
+there is a corresponding send or recv.
+
+For example, the following code will deadlock as the sender will block,
+preventing the recv from ever being called:
+
+```
+    >>> h = vanilla.Hub()
+    >>> p = h.pipe()
+    >>> p.send(1)     # deadlock
+    >>> p.recv()
+```
+
+The following is OK as the send is spawned to a background green thread:
+
+```
+    >>> h = vanilla.Hub()
+    >>> p = h.pipe()
+    >>> h.spawn(p.send, 1)
+    >>> p.recv()
+    1
+```
+
 - Queue
 - Dealer
 - Router
@@ -9,6 +42,17 @@
 - Value
 - State
 
+### Major Actions
+
+- send
+- recv
+- connect
+- pipe
+- map
+- consume
+
+- TODO:
+- filter
 
 ### thoughts from Dataflow and Reactive Programming Systems:
 
