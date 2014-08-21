@@ -64,8 +64,8 @@ becomes full.
 ```
 
 A Dealer has exactly one sender but can have many recvers. It has no buffer, so
-sends and recvs block until there is a corresponding thread is ready. Sends are
-round robined to waiting recvers on a first come first serve basis.
+sends and recvs block until a corresponding thread is ready. Sends are round
+robined to waiting recvers on a first come first serve basis.
 
 ```
     >>> h = vanilla.Hub()
