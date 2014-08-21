@@ -375,46 +375,46 @@ class Recver(End):
                 f(item)
 
 
-def queue(hub, size=0):
-    queue = collections.deque()
+def Queue(hub, size=0):
+    def main(upstream, downstream, size):
+        queue = collections.deque()
 
-    def main(recver, sender, size):
         while True:
-            watch = []
-
-            if sender.halted:
-                # no one is listening to our output, so shutdown
-                recver.close()
+            if downstream.halted:
+                # no one is downstream, so shutdown
+                upstream.close()
                 return
 
+            watch = []
             if queue:
-                watch.append(sender)
-
+                watch.append(downstream)
             else:
-                # no point continuing with an empty buffer unless there's input
-                if recver.halted:
-                    sender.close()
+                # if the buffer is empty, and no one is upstream, shutdown
+                if upstream.halted:
+                    downstream.close()
                     return
 
-            if not recver.halted and (size <= 0 or len(queue) < size):
-                watch.append(recver)
+            # if are upstream is still available, and there is spare room in
+            # the buffer, watch upstream as well
+            if not upstream.halted and (size <= 0 or len(queue) < size):
+                watch.append(upstream)
 
             try:
                 ch, item = hub.select(watch)
             except Halt:
                 continue
 
-            if ch == recver:
+            if ch == upstream:
                 queue.append(item)
 
-            elif ch == sender:
+            elif ch == downstream:
                 item = queue.popleft()
-                sender.send(item)
+                downstream.send(item)
 
-    in_ = hub.pipe()
-    out = hub.pipe()
-    hub.spawn(main, in_.recver, out.sender, size)
-    return Paired(in_.sender, out.recver)
+    sendside = hub.pipe()
+    recvside = hub.pipe()
+    hub.spawn(main, sendside.recver, recvside.sender, size)
+    return Paired(sendside.sender, recvside.recver)
 
 
 class Dealer(object):
@@ -647,11 +647,11 @@ class Hub(object):
         return sender
 
     def queue(self, size=0):
-        return queue(self, size)
+        return Queue(self, size)
 
     # TODO:
     def channel(self, size=0):
-        return queue(self, size)
+        return Queue(self, size)
 
     def broadcast(self):
         return Broadcast(self)
