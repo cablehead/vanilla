@@ -22,7 +22,7 @@ Vanilla's API is still stabilizing and so the documentation is also still
 coming together:
 
 - [Message passing primitives](docs/primitives.md)
-- [Tutorial](docs/tutorials.md)
+- [Tutorial](docs/tutorial.md)
 
 ## Overview
 
