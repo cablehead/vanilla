@@ -3,11 +3,9 @@
 #### Pipe
 
 ```
-            +------+
-            |      |
-  send ---> | Pipe | ---> recv
-            |      |
-            +------+
+          +------+
+  send -> | Pipe | -> recv
+          +------+
 ```
 
 The most basic primitive is the Pipe. A Pipe can have exactly one sender and
@@ -34,7 +32,29 @@ The following is OK as the send is spawned to a background green thread:
     1
 ```
 
-- Queue
+#### Queue
+
+```
+            +----------+
+  send ---> |  Queue   |
+            | (buffer) | ---> recv
+            +----------+
+```
+
+A Queue may also only have exactly one sender and recver. A Queue however has a
+fifo buffer of a custom size. Sends to the Queue won't block until the buffer
+becomes full.
+
+```
+    >>> h = vanilla.Hub()
+    >>> q = h.queue(1)
+    >>> p.send(1)        # safe from deadlock
+    >>> # p.send(1)      # this would deadlock however, as the queue only has a
+                         # buffer size of 1
+    >>> p.recv()
+    1
+```
+
 - Dealer
 - Router
 - Channel
