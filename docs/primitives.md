@@ -48,9 +48,9 @@ becomes full.
 ```
     >>> h = vanilla.Hub()
     >>> q = h.queue(1)
-    >>> q.send(1)        # safe from deadlock
-    >>> # q.send(1)      # this would deadlock however as the queue only has a
-                         # buffer size of 1
+    >>> q.send(1)      # safe from deadlock
+    >>> # q.send(1)    # this would deadlock however as the queue only has a
+                       # buffer size of 1
     >>> q.recv()
     1
 ```
@@ -58,9 +58,9 @@ becomes full.
 #### Dealer
 
 ```
-           +--------+  +-- recv
-  send --> | Dealer | -|
-           +--------+  +-- recv
+           +--------+  /--> recv
+  send --> | Dealer | -+
+           +--------+  \--> recv
 ```
 
 A Dealer has exactly one sender but can have many recvers. It has no buffer, so
