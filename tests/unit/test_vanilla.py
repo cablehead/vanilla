@@ -92,7 +92,65 @@ class TestHub(object):
         pass
 
 
-class TestPipe(object):
+class Abandoned(object):
+    """
+    suite to test a primitive handles abandoned OK
+    """
+    def test_abandoned_sender(self):
+        h = vanilla.Hub()
+
+        check = h.pipe()
+
+        def assert_abandoned(sender):
+            pytest.raises(vanilla.Abandoned, sender.send, 10)
+            check.send('done')
+
+        # test abandoned after pause
+        sender, recver = self._primitive(h)
+        h.spawn(assert_abandoned, sender)
+        # sleep so the spawn runs and the send pauses
+        h.sleep(1)
+        del recver
+        gc.collect()
+        assert check.recv() == 'done'
+
+        # test abandoned before pause
+        sender, recver = self._primitive(h)
+        h.spawn(assert_abandoned, sender)
+        del recver
+        gc.collect()
+        assert check.recv() == 'done'
+
+    def test_abandoned_recver(self):
+        h = vanilla.Hub()
+
+        check = h.pipe()
+
+        def assert_abandoned(recver):
+            pytest.raises(vanilla.Abandoned, recver.recv)
+            check.send('done')
+
+        # test abandoned after pause
+        sender, recver = self._primitive(h)
+        h.spawn(assert_abandoned, recver)
+        # sleep so the spawn runs and the recv pauses
+        h.sleep(1)
+        del sender
+        gc.collect()
+        assert check.recv() == 'done'
+
+        # test abandoned before pause
+        sender, recver = self._primitive(h)
+        h.spawn(assert_abandoned, recver)
+        del sender
+        gc.collect()
+        assert check.recv() == 'done'
+
+
+class TestPipe(Abandoned):
+    def _primitive(self, hub):
+        return hub.pipe()
+
     def test_deadlock(self):
         h = vanilla.Hub()
         p = h.pipe()
@@ -223,68 +281,6 @@ class TestPipe(object):
         ch, item = h.select([s1, r2], timeout=20)
         assert ch == r2
         assert item == 10
-        assert check.recv() == 'done'
-
-    def test_abandoned_sender(self):
-        h = vanilla.Hub()
-
-        check = h.pipe()
-
-        # test abondoned after pause
-        sender, recver = h.pipe()
-
-        @h.spawn
-        def _():
-            pytest.raises(vanilla.Abandoned, sender.send, 10)
-            check.send('done')
-
-        # sleep so the spawn runs and the send pauses
-        h.sleep(1)
-        del recver
-        gc.collect()
-        assert check.recv() == 'done'
-
-        # test abondoned before pause
-        sender, recver = h.pipe()
-
-        @h.spawn
-        def _():
-            pytest.raises(vanilla.Abandoned, sender.send, 10)
-            check.send('done')
-
-        del recver
-        gc.collect()
-        assert check.recv() == 'done'
-
-    def test_abandoned_recver(self):
-        h = vanilla.Hub()
-
-        check = h.pipe()
-
-        # test abondoned after pause
-        sender, recver = h.pipe()
-
-        @h.spawn
-        def _():
-            pytest.raises(vanilla.Abandoned, recver.recv)
-            check.send('done')
-
-        # sleep so the spawn runs and the recv pauses
-        h.sleep(1)
-        del sender
-        gc.collect()
-        assert check.recv() == 'done'
-
-        # test abondoned before pause
-        sender, recver = h.pipe()
-
-        @h.spawn
-        def _():
-            pytest.raises(vanilla.Abandoned, recver.recv)
-            check.send('done')
-
-        del sender
-        gc.collect()
         assert check.recv() == 'done'
 
     def test_pipe(self):
@@ -439,7 +435,10 @@ class TestPulse(object):
         h.stop()
 
 
-class TestDealer(object):
+class TestDealer(Abandoned):
+    def _primitive(self, hub):
+        return hub.dealer()
+
     def test_send_then_recv(self):
         h = vanilla.Hub()
         d = h.dealer()

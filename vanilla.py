@@ -232,10 +232,9 @@ class Pipe(object):
         return Paired(sender, recver)
 
     def on_abandoned(self, *a, **kw):
-        # TODO: support Dealer / Router
-        current = self.recver_current or self.sender_current
-        if current:
-            self.hub.throw_to(current, Abandoned)
+        remaining = self.recver() or self.sender()
+        if remaining:
+            remaining.abandoned()
 
 
 class End(object):
@@ -267,6 +266,10 @@ class End(object):
     def unselect(self):
         assert self.current == getcurrent()
         self.current = None
+
+    def abandoned(self):
+        if self.current:
+            self.hub.throw_to(self.current, Abandoned)
 
     @property
     def peak(self):
@@ -421,6 +424,11 @@ class Dealer(object):
         @property
         def peak(self):
             return self.current[0]
+
+        def abandoned(self):
+            waiters = list(self.current)
+            for current in waiters:
+                self.hub.throw_to(current, Abandoned)
 
     def __new__(cls, hub):
         sender, recver = hub.pipe()
