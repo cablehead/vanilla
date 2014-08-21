@@ -3,7 +3,7 @@
 *If Go and ZeroMQ had a baby, and that baby grew up and started dating PyPy,
 and they had a baby, it might look like Vanilla.*
 
-[![Build Status](https://travis-ci.org/cablehead/vanilla.svg?branch=master)](https://travis-ci.org/cablehead/vanilla) [![Coverage Status](https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=rehash-pipes)](https://coveralls.io/r/cablehead/vanilla?branch=rehash-pipes)
+[![Build Status](https://travis-ci.org/cablehead/vanilla.svg?branch=master)](https://travis-ci.org/cablehead/vanilla) [![Coverage Status](https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=master)](https://coveralls.io/r/cablehead/vanilla?branch=master)
 
 ## Example
 
