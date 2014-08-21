@@ -16,6 +16,14 @@ and they had a baby, it might look like Vanilla.*
     'Hello World'
 ```
 
+## Documentation
+
+Vanilla's API is still stabilizing and so the documentation is also still
+coming together:
+
+- [Message passing primitives](docs/primitives.md)
+- [Tutorial](docs/tutorials.md)
+
 ## Overview
 
 Vanilla is a fast, concurrent, micro server-library. It's designed to be used
@@ -48,10 +56,6 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   Linux. But only Linux. This makes it easier to avoid introducing dependencies
   on cross platform asynchronous UI libraries like libevent, libev and libuv
   making vanilla PyPy support simple.
-
-## Documentation
-
-http://cablehead.viewdocs.io/vanilla
 
 ## Acknowledgements
 
