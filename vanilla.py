@@ -232,6 +232,7 @@ class Pipe(object):
         return Paired(sender, recver)
 
     def on_abandoned(self, *a, **kw):
+        # TODO: support Dealer / Router
         current = self.recver_current or self.sender_current
         if current:
             self.hub.throw_to(current, Abandoned)
@@ -257,15 +258,19 @@ class End(object):
             raise Closed
         if self.other is None:
             raise Abandoned
-        return self.other.current is not None
+        return bool(self.other.current)
 
-    def select(self, current=None):
+    def select(self):
         assert self.current is None
-        self.current = current or getcurrent()
+        self.current = getcurrent()
 
     def unselect(self):
         assert self.current == getcurrent()
         self.current = None
+
+    @property
+    def peak(self):
+        return self.current
 
     def pause(self, timeout=-1):
         self.select()
@@ -276,7 +281,7 @@ class End(object):
         return ret
 
     def close(self):
-        if self.other is not None and self.other.current is not None:
+        if self.other is not None and bool(self.other.current):
             self.hub.throw_to(self.other.current, Closed)
         self.middle.closed = True
 
@@ -295,15 +300,13 @@ class Sender(End):
         return self.middle.recver()
 
     def send(self, item, timeout=-1):
-        # only allow one send at a time
-        assert self.current is None
         if not self.ready:
             self.pause(timeout=timeout)
 
         if isinstance(item, Exception):
-            return self.hub.throw_to(self.other.current, item)
+            return self.hub.throw_to(self.other.peak, item)
 
-        return self.hub.switch_to(self.other.current, self.other, item)
+        return self.hub.switch_to(self.other.peak, self.other, item)
 
     def connect(self, recver):
         recver.middle.recver = self.middle.recver
@@ -326,14 +329,11 @@ class Recver(End):
         return self.middle.sender()
 
     def recv(self, timeout=-1):
-        # only allow one recv at a time
-        assert self.current is None
-
         if self.ready:
-            self.current = getcurrent()
+            self.select()
             # switch directly, as we need to pause
-            _, ret = self.other.current.switch(self.other, None)
-            self.current = None
+            _, ret = self.other.peak.switch(self.other, None)
+            self.unselect()
             return ret
 
         return self.pause(timeout=timeout)
@@ -410,31 +410,22 @@ def Queue(hub, size=0):
 
 
 class Dealer(object):
-    class Sender(Sender):
-        def send(self, item, timeout=-1):
-            if self.waiters:
-                waiter = self.waiters.popleft()
-                self.hub.switch_to(waiter, item)
-            else:
-                super(Dealer.Sender, self).send(item, timeout=timeout)
-
     class Recver(Recver):
-        def recv(self, timeout=-1):
-            if super(Dealer.Recver, self).ready:
-                return super(Dealer.Recver, self).recv()
+        def select(self):
+            assert getcurrent() not in self.current
+            self.current.append(getcurrent())
 
-            self.waiters.append(getcurrent())
-            try:
-                return self.hub.pause(timeout=timeout)
-            except Timeout:
-                self.waiters.remove(getcurrent())
-                raise
+        def unselect(self):
+            self.current.remove(getcurrent())
+
+        @property
+        def peak(self):
+            return self.current[0]
 
     def __new__(cls, hub):
         sender, recver = hub.pipe()
-        sender.__class__ = Dealer.Sender
         recver.__class__ = Dealer.Recver
-        sender.waiters = recver.waiters = collections.deque()
+        recver.current = collections.deque()
         return Paired(sender, recver)
 
 

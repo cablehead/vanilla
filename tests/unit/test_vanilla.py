@@ -474,7 +474,7 @@ class TestDealer(object):
         d = h.dealer()
         pytest.raises(vanilla.Timeout, d.recv, timeout=10)
         # assert that waiters is cleaned up after timeout
-        assert not d.recver.waiters
+        assert not d.recver.current
 
 
 class TestRouter(object):
