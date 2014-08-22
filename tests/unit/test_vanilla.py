@@ -667,6 +667,13 @@ class TestValue(object):
 
 
 class TestDescriptor(object):
+    def test_human_mask(self):
+        C = vanilla.C
+        mask = C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | \
+            C.EPOLLET | C.EPOLLRDHUP
+        assert set(vanilla.Descriptor.humanize_mask(mask)) == set(
+            ['in', 'out', 'hup', 'err', 'et', 'rdhup'])
+
     def test_recv_bytes(self):
         h = vanilla.Hub()
         r, w = os.pipe()
