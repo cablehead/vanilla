@@ -315,10 +315,24 @@ class Sender(End):
         return self.hub.switch_to(self.other.peak, self.other, item)
 
     def connect(self, recver):
-        recver.middle.recver = self.middle.recver
-        self.middle.recver().middle = recver.middle
-        del recver.middle
-        del self.middle
+        """
+        Rewire:
+            s1 -> m1 <- r1 --> s2 -> m2 <- r2
+        To:
+            s1 -> m1 <- r2
+        """
+        r1 = recver
+        m1 = r1.middle
+        s2 = self
+        m2 = self.middle
+        r2 = self.other
+
+        r2.middle = m1
+        m1.recver = weakref.ref(r2, m1.on_abandoned)
+        m1.recver_current = m2.recver_current
+        del r1.middle
+        del s2.middle
+        return r2
 
 
 class Recver(End):
@@ -631,9 +645,9 @@ class Hub(object):
     def queue(self, size=0):
         return Queue(self, size)
 
-    # TODO:
     def channel(self, size=0):
-        return Queue(self, size)
+        router = self.router()
+        return Paired(router.sender, router.pipe(self.dealer()))
 
     def broadcast(self):
         return Broadcast(self)

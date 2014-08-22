@@ -544,6 +544,42 @@ class TestRouter(Abandoned):
         assert q.recv() == 1
 
 
+class TestChannel(Abandoned):
+    def _primitive(self, hub):
+        return hub.channel()
+
+    def test_send_then_recv(self):
+        h = vanilla.Hub()
+        ch = h.channel()
+
+        h.spawn(ch.send, 3)
+        h.spawn(ch.send, 2)
+        h.spawn(ch.send, 1)
+        h.sleep(1)
+
+        assert ch.recv() == 3
+        assert ch.recv() == 2
+        assert ch.recv() == 1
+
+    def test_recv_then_send(self):
+        h = vanilla.Hub()
+
+        d = h.dealer()
+        q = h.queue(10)
+
+        h.spawn(lambda: q.send(d.recv()))
+        h.spawn(lambda: q.send(d.recv()))
+        h.spawn(lambda: q.send(d.recv()))
+        h.sleep(1)
+
+        d.send(1)
+        assert q.recv() == 1
+        d.send(2)
+        d.send(3)
+        assert q.recv() == 2
+        assert q.recv() == 3
+
+
 class TestBroadcast(object):
     def test_broadcast(self):
         h = vanilla.Hub()
