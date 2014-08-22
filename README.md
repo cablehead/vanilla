@@ -34,8 +34,8 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   the Greenlet and CFFI packages.
 
 - **concurrent**: for creating highly concurrent actor based architectures
-  taking inspiration from Go to use *coroutines* and *channels* for message
-  passing as core building blocks.
+  taking inspiration from Go to use coroutines and message passing as core
+  building blocks.
 
 - **utilitarian**: a swiss army knife for assembling services. Vanilla
   abstracts multiplexing push/pull and request/reply message passing patterns
