@@ -69,6 +69,24 @@
 - what happens when something else wants the pipe to stop
 - what happens when the world stops
 
+### rpc interface:
+
+- requires a two way pipe
+- how to turn 2x one way pipes into a two way pipe?
+- can this be layered on top of any type of message passing primitive?
+- how to layer on top of Descriptors?
+- observation: the server interface is the same as the current http server
+  interface
+
+```
+    client:
+        response = conn.call(data)
+        response.recv()
+
+    server:
+        request, response = conn.serve()
+        response.send(data)
+```
 
 ### http:
 
