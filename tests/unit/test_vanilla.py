@@ -567,6 +567,22 @@ class TestChannel(object):
         assert q.recv() == 2
         assert q.recv() == 3
 
+    def test_no_queue(self):
+        h = vanilla.Hub()
+        ch = h.channel()
+        pytest.raises(vanilla.Timeout, ch.send, 1, timeout=0)
+
+    def test_queue(self):
+        h = vanilla.Hub()
+        ch = h.channel(2)
+        ch.send(1, timeout=0)
+        ch.send(2, timeout=0)
+        pytest.raises(vanilla.Timeout, ch.send, 3, timeout=0)
+        assert ch.recv() == 1
+        ch.send(3, timeout=0)
+        assert ch.recv() == 2
+        assert ch.recv() == 3
+
 
 class TestBroadcast(object):
     def test_broadcast(self):

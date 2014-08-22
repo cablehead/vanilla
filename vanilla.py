@@ -387,7 +387,9 @@ class Recver(End):
                 f(item)
 
 
-def Queue(hub, size=0):
+def Queue(hub, size):
+    assert size > 0
+
     def main(upstream, downstream, size):
         queue = collections.deque()
 
@@ -408,7 +410,7 @@ def Queue(hub, size=0):
 
             # if are upstream is still available, and there is spare room in
             # the buffer, watch upstream as well
-            if not upstream.halted and (size <= 0 or len(queue) < size):
+            if not upstream.halted and len(queue) < size:
                 watch.append(upstream)
 
             try:
@@ -423,10 +425,20 @@ def Queue(hub, size=0):
                 item = queue.popleft()
                 downstream.send(item)
 
-    sendside = hub.pipe()
-    recvside = hub.pipe()
-    hub.spawn(main, sendside.recver, recvside.sender, size)
-    return Paired(sendside.sender, recvside.recver)
+    upstream = hub.pipe()
+    downstream = hub.pipe()
+
+    # TODO: rethink this
+    old_connect = upstream.sender.connect
+
+    def connect(recver):
+        old_connect(recver)
+        return downstream.recver
+
+    upstream.sender.connect = connect
+
+    hub.spawn(main, upstream.recver, downstream.sender, size)
+    return Paired(upstream.sender, downstream.recver)
 
 
 class Dealer(object):
@@ -642,12 +654,14 @@ class Hub(object):
         sender.trigger = functools.partial(sender.send, True)
         return sender
 
-    def queue(self, size=0):
+    def queue(self, size):
         return Queue(self, size)
 
-    def channel(self, size=0):
-        router = self.router()
-        return Paired(router.sender, router.pipe(self.dealer()))
+    def channel(self, size=-1):
+        sender, recver = self.router()
+        if size > 0:
+            recver = recver.pipe(self.queue(size))
+        return Paired(sender, recver.pipe(self.dealer()))
 
     def broadcast(self):
         return Broadcast(self)
@@ -1239,7 +1253,7 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
-        self.responses, recver = self.hub.queue()
+        self.responses, recver = self.hub.queue(1000)
         recver.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
