@@ -117,4 +117,4 @@ equivalent to channels in Go. It's implementation is [literally][] a Router
 piped to a Dealer, with an optional Queue in between.
 
 [literally]:
-	https://github.com/cablehead/vanilla/blob/dd4605fc83147a0200067030605550b8c2952b7b/vanilla.py#L660
+	https://github.com/cablehead/vanilla/blob/dd4605fc83147a0200067030605550b8c2952b7b/vanilla.py#L660 "literally"
