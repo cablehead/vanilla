@@ -44,7 +44,7 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
 
 - **predictable**: Vanilla's concurrency model is based on coroutines or green
   threads, via the Greenlet package. Arguably this model allows a more natural
-  and readable coding style than asynchronous callback models used by Twisted,
+  and testable coding style than asynchronous callback models used by Twisted,
   Tornado and Node.
 
   However, green threads have been popularized in the Python world by Eventlet
