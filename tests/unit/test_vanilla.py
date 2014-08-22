@@ -92,65 +92,62 @@ class TestHub(object):
         pass
 
 
-class Abandoned(object):
-    """
-    suite to test a primitive handles abandoned OK
-    """
-    def test_abandoned_sender(self):
+@pytest.mark.parametrize('primitive, a', [
+    ('pipe', ()),
+    ('dealer', ()),
+    ('router', ()),
+    ('channel', ()), ])
+class TestAbandoned(object):
+    @staticmethod
+    def assert_abandoned_sender(sender, check):
+        pytest.raises(vanilla.Abandoned, sender.send, 10)
+        check.send('done')
+
+    def test_abandoned_sender_after_wait(self, primitive, a):
         h = vanilla.Hub()
-
+        sender, recver = getattr(h, primitive)(*a)
         check = h.pipe()
-
-        def assert_abandoned(sender):
-            pytest.raises(vanilla.Abandoned, sender.send, 10)
-            check.send('done')
-
-        # test abandoned after pause
-        sender, recver = self._primitive(h)
-        h.spawn(assert_abandoned, sender)
-        # sleep so the spawn runs and the send pauses
+        h.spawn(self.assert_abandoned_sender, sender, check)
         h.sleep(1)
         del recver
         gc.collect()
         assert check.recv() == 'done'
 
-        # test abandoned before pause
-        sender, recver = self._primitive(h)
-        h.spawn(assert_abandoned, sender)
+    def test_abandoned_sender_before_wait(self, primitive, a):
+        h = vanilla.Hub()
+        sender, recver = getattr(h, primitive)(*a)
+        check = h.pipe()
+        h.spawn(self.assert_abandoned_sender, sender, check)
         del recver
         gc.collect()
         assert check.recv() == 'done'
 
-    def test_abandoned_recver(self):
+    @staticmethod
+    def assert_abandoned_recver(recver, check):
+        pytest.raises(vanilla.Abandoned, recver.recv)
+        check.send('done')
+
+    def test_abandoned_recver_after_wait(self, primitive, a):
         h = vanilla.Hub()
-
+        sender, recver = getattr(h, primitive)(*a)
         check = h.pipe()
-
-        def assert_abandoned(recver):
-            pytest.raises(vanilla.Abandoned, recver.recv)
-            check.send('done')
-
-        # test abandoned after pause
-        sender, recver = self._primitive(h)
-        h.spawn(assert_abandoned, recver)
-        # sleep so the spawn runs and the recv pauses
+        h.spawn(self.assert_abandoned_recver, recver, check)
         h.sleep(1)
         del sender
         gc.collect()
         assert check.recv() == 'done'
 
-        # test abandoned before pause
-        sender, recver = self._primitive(h)
-        h.spawn(assert_abandoned, recver)
+    def test_abandoned_recver_before_wait(self, primitive, a):
+        h = vanilla.Hub()
+        sender, recver = getattr(h, primitive)(*a)
+        check = h.pipe()
+        h.spawn(self.assert_abandoned_recver, recver, check)
         del sender
         gc.collect()
         assert check.recv() == 'done'
 
 
-class TestPipe(Abandoned):
-    def _primitive(self, hub):
-        return hub.pipe()
-
+class TestPipe(object):
     def test_deadlock(self):
         h = vanilla.Hub()
         p = h.pipe()
@@ -435,10 +432,7 @@ class TestPulse(object):
         h.stop()
 
 
-class TestDealer(Abandoned):
-    def _primitive(self, hub):
-        return hub.dealer()
-
+class TestDealer(object):
     def test_send_then_recv(self):
         h = vanilla.Hub()
         d = h.dealer()
@@ -512,10 +506,7 @@ class TestDealer(Abandoned):
         assert q.recv() == 3
 
 
-class TestRouter(Abandoned):
-    def _primitive(self, hub):
-        return hub.router()
-
+class TestRouter(object):
     def test_send_then_recv(self):
         h = vanilla.Hub()
         r = h.router()
@@ -544,10 +535,7 @@ class TestRouter(Abandoned):
         assert q.recv() == 1
 
 
-class TestChannel(Abandoned):
-    def _primitive(self, hub):
-        return hub.channel()
-
+class TestChannel(object):
     def test_send_then_recv(self):
         h = vanilla.Hub()
         ch = h.channel()
