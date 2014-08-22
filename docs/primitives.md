@@ -102,3 +102,19 @@ on a first come first servce basis.
     >>> r.recv()
     1
 ```
+
+#### Channel
+
+```
+  send --\    +---------+  /--> recv
+          +-> | Channel | -+
+  send --/    +---------+  \--> recv
+```
+
+A Channel can have many senders and many recvers. By default it is unbuffered,
+but you can create buffered Channels by specifying a size. They're structurally
+equivalent to channels in Go. It's implementation is [literally][] a Router
+piped to a Dealer, with an optional Queue in between.
+
+[literally]:
+	https://github.com/cablehead/vanilla/blob/dd4605fc83147a0200067030605550b8c2952b7b/vanilla.py#L660
