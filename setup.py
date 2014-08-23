@@ -3,11 +3,11 @@ import re
 
 from setuptools.command.test import test as TestCommand
 from setuptools import setup
-# from setuptools import find_packages
+from setuptools import find_packages
 
 
 metadata = dict(
-    re.findall("__([a-z]+)__ = '([^']+)'", open('vanilla.py').read()))
+    re.findall("__([a-z]+)__ = '([^']+)'", open('vanilla/core.py').read()))
 
 requirements = [
     x.strip() for x
@@ -35,8 +35,7 @@ setup(
     author='Andy Gayton',
     author_email='andy@thecablelounge.com',
     install_requires=requirements,
-    # packages = find_packages(),
-    py_modules=['vanilla'],
+    packages=find_packages(),
     url='http://pypi.python.org/pypi/vanilla/',
     license='MIT',
     description=description,
