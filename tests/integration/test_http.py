@@ -68,7 +68,7 @@ class TestHTTP(object):
 
 
 def test_WebSocketClient():
-    from vanilla import WebSocket
+    from vanilla.core import WebSocket
 
     h = vanilla.Hub()
 
