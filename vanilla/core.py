@@ -485,6 +485,9 @@ class Router(object):
             for current in waiters:
                 self.hub.throw_to(current, Abandoned)
 
+        def connect(self, recver):
+            recver.consume(self.send)
+
     def __new__(cls, hub):
         sender, recver = hub.pipe()
         sender.__class__ = Router.Sender

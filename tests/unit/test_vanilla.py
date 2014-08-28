@@ -87,9 +87,15 @@ class TestHub(object):
 
         h.stop()
 
-    @pytest.mark.skipif(True, reason='TODO')
     def test_stop_on_term(self):
-        pass
+        h = vanilla.Hub()
+
+        @h.spawn
+        def _():
+            h.sleep(20)
+            os.kill(os.getpid(), signal.SIGINT)
+
+        h.stop_on_term()
 
 
 @pytest.mark.parametrize('primitive, a', [
@@ -533,6 +539,23 @@ class TestRouter(object):
         h.sleep(1)
         r.send(1)
         assert q.recv() == 1
+
+    def test_pipe(self):
+        h = vanilla.Hub()
+
+        r = h.router()
+
+        p1 = h.pipe()
+        p2 = h.pipe()
+
+        p1.pipe(r)
+        p2.pipe(r)
+
+        h.spawn(p1.send, 1)
+        h.spawn(p2.send, 2)
+
+        assert r.recv() == 1
+        assert r.recv() == 2
 
 
 class TestChannel(object):
