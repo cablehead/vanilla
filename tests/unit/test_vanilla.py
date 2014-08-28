@@ -553,7 +553,11 @@ class TestRouter(object):
 
         h.spawn(p1.send, 1)
         h.spawn(p2.send, 2)
+        h.spawn(p1.send, 1)
+        h.spawn(p2.send, 2)
 
+        assert r.recv() == 1
+        assert r.recv() == 2
         assert r.recv() == 1
         assert r.recv() == 2
 

@@ -385,7 +385,13 @@ class Recver(End):
         @self.hub.spawn
         def _():
             for item in self:
-                f(item)
+                # TODO: think through whether trapping for HALT here is a good
+                # idea
+                try:
+                    f(item)
+                except Halt:
+                    self.close()
+                    break
 
 
 def Queue(hub, size):
