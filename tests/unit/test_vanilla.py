@@ -89,12 +89,7 @@ class TestHub(object):
 
     def test_stop_on_term(self):
         h = vanilla.Hub()
-
-        @h.spawn
-        def _():
-            h.sleep(20)
-            os.kill(os.getpid(), signal.SIGINT)
-
+        h.spawn_later(10, os.kill, os.getpid(), signal.SIGINT)
         h.stop_on_term()
 
 
