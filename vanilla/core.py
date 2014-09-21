@@ -238,7 +238,12 @@ class Pipe(object):
     def on_abandoned(self, *a, **kw):
         remaining = self.recver() or self.sender()
         if remaining:
-            remaining.abandoned()
+            # this is running from a preemptive callback triggered by the
+            # garbage collector. we spawn the abandon clean up in order to pull
+            # execution back under a green thread owned by our hub, and to
+            # minimize the amount of code running while preempted. note this
+            # means spawning needs to be atomic.
+            self.hub.spawn(remaining.abandoned)
 
 
 class End(object):
@@ -333,6 +338,8 @@ class Sender(End):
         m1.recver_current = m2.recver_current
         del r1.middle
         del s2.middle
+        del m2.sender
+        del m2.recver
         return r2
 
 
@@ -1276,8 +1283,8 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
-        self.responses, recver = self.hub.queue(1000)
-        recver.pipe(self.hub.consumer(self.reader))
+        self.responses = self.hub.queue(10)
+        self.responses.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
         version, code, message = self.socket.recv_line().split(' ', 2)

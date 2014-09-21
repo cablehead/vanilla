@@ -376,6 +376,7 @@ class TestPipe(object):
         del go
         gc.collect()
         gc.collect()
+        h.sleep(1)
 
         assert pipe.recver() is None
         assert pipe.sender() is None
