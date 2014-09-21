@@ -375,6 +375,7 @@ class TestPipe(object):
         h.sleep(1)
         del go
         gc.collect()
+        h.sleep(1)
         gc.collect()
         h.sleep(1)
 
