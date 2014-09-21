@@ -214,6 +214,10 @@ class Paired(Paired):
     def consume(self, *a, **kw):
         return self.recver.consume(*a, **kw)
 
+    def close(self):
+        self.sender.close()
+        self.recver.close()
+
 
 class Pipe(object):
     __slots__ = [
@@ -535,6 +539,26 @@ class Broadcast(object):
         recver.consume(self.send)
 
 
+class Gate(object):
+    def __init__(self, hub, state=False):
+        self.hub = hub
+        self.pipe = hub.pipe()
+        self.state = state
+
+    def trigger(self):
+        self.state = True
+        if self.pipe.sender.ready:
+            self.pipe.send(True)
+
+    def wait(self, timeout=-1):
+        if not self.state:
+            self.pipe.recv(timeout=timeout)
+        return self
+
+    def clear(self):
+        self.state = False
+
+
 class Value(object):
     def __init__(self, hub):
         self.hub = hub
@@ -695,6 +719,9 @@ class Hub(object):
 
     def broadcast(self):
         return Broadcast(self)
+
+    def gate(self, state=False):
+        return Gate(self, state=state)
 
     def value(self):
         return Value(self)
@@ -882,7 +909,23 @@ class Poll(object):
         self.hub = hub
 
     def socket(self, conn):
-        return Descriptor(self.hub, conn)
+        class Adapt(object):
+            def __init__(self, conn):
+                self.conn = conn
+                self.fd = self.conn.fileno()
+
+            def fileno(self):
+                return self.fd
+
+            def read(self, n):
+                return self.conn.recv(n)
+
+            def write(self, data):
+                return self.conn.send(data)
+
+            def close(self):
+                self.conn.close()
+        return Descriptor(self.hub, Adapt(conn))
 
     def fileno(self, fileno):
         class Adapt(object):
@@ -892,10 +935,10 @@ class Poll(object):
             def fileno(self):
                 return self.fd
 
-            def recv(self, n):
+            def read(self, n):
                 return os.read(self.fd, n)
 
-            def send(self, data):
+            def write(self, data):
                 return os.write(self.fd, data)
 
             def close(self):
@@ -923,12 +966,12 @@ class Descriptor(object):
                 s.append(v)
         return s
 
-    def __init__(self, hub, conn):
+    def __init__(self, hub, d):
         self.hub = hub
 
-        C.unblock(conn.fileno())
-        self.conn = conn
-        self.fileno = self.conn.fileno()
+        C.unblock(d.fileno())
+        self.d = d
+        self.fileno = self.d.fileno()
 
         self.closed = False
 
@@ -942,31 +985,72 @@ class Descriptor(object):
 
         # TODO: if this is a read or write only file, don't set up both
         # directions
-        self.recv_extra = ''
-        self.recv_sender, self.recver = self.hub.pipe()
-        self.sender, self.send_recver = self.hub.pipe()
-
-        self.trigger_reader = self.hub.trigger(self.reader)
-
-        # self.trigger_writer = self.hub.trigger(self.writer)
-        self.hub.spawn(self.writer)
+        self.read_buffer = ''
+        self.reader = self.hub.pipe()
+        self.writer = self.hub.pipe()
 
         self.hub.spawn(self.main)
 
-    def recv(self):
-        return self.recver.recv(timeout=self.timeout)
+    def main(self):
+        @self.hub.trigger
+        def reader():
+            while True:
+                try:
+                    data = self.d.read(4096)
+                except (socket.error, OSError), e:
+                    if e.errno == 11:  # EAGAIN
+                        break
+                    self.reader.close()
+                    return
+                if not data:
+                    self.reader.close()
+                    return
+                self.reader.send(data)
 
-    def send(self, data):
-        return self.sender.send(data)
+        writer = self.hub.gate()
 
-    def recv_bytes(self, n):
+        @self.hub.spawn
+        def _():
+            for data in self.writer.recver:
+                while True:
+                    try:
+                        n = self.d.write(data)
+                    except (socket.error, OSError), e:
+                        if e.errno == 11:  # EAGAIN
+                            writer.wait().clear()
+                            continue
+                        self.writer.close()
+                        return
+                    if n == len(data):
+                        break
+                    data = data[n:]
+
+        for fileno, event in self.events:
+            if event & C.EPOLLIN:
+                reader.trigger()
+
+            elif event & C.EPOLLOUT:
+                writer.trigger()
+
+            else:
+                print "YARG", self.humanize_mask(event)
+
+        self.close()
+
+    def read(self):
+        return self.reader.recv(timeout=self.timeout)
+
+    def write(self, data):
+        return self.writer.send(data)
+
+    def read_bytes(self, n):
         if n == 0:
             return ''
 
-        received = len(self.recv_extra)
-        segments = [self.recv_extra]
+        received = len(self.read_buffer)
+        segments = [self.read_buffer]
         while received < n:
-            segment = self.recv()
+            segment = self.read()
             segments.append(segment)
             received += len(segment)
 
@@ -974,74 +1058,32 @@ class Descriptor(object):
         # additional portion to pending
         overage = received - n
         if overage:
-            self.recv_extra = segments[-1][-1*(overage):]
+            self.read_buffer = segments[-1][-1*(overage):]
             segments[-1] = segments[-1][:-1*(overage)]
         else:
-            self.recv_extra = ''
+            self.read_buffer = ''
 
         return ''.join(segments)
 
-    def recv_partition(self, sep):
-        received = self.recv_extra
+    def read_partition(self, sep):
+        received = self.read_buffer
         while True:
             keep, matched, extra = received.partition(sep)
             if matched:
-                self.recv_extra = extra
+                self.read_buffer = extra
                 return keep
-            received += self.recv()
+            received += self.read()
 
-    def recv_line(self):
-        return self.recv_partition(self.line_break)
-
-    def reader(self):
-        while True:
-            try:
-                data = self.conn.recv(4096)
-            except (socket.error, OSError), e:
-                if e.errno == 11:  # EAGAIN
-                    break
-                self.recv_sender.close()
-                return
-            if not data:
-                self.recv_sender.close()
-                return
-            self.recv_sender.send(data)
-
-    def writer(self):
-        for data in self.send_recver:
-            while True:
-                try:
-                    n = self.conn.send(data)
-                except (socket.error, OSError), e:
-                    if e.errno == 11:  # EAGAIN
-                        raise
-                    self.send_recver.close()
-                    return
-                if n == len(data):
-                    break
-                data = data[n:]
-
-    def main(self):
-        for fileno, event in self.events:
-            if event & C.EPOLLIN:
-                self.trigger_reader.trigger()
-
-            elif event & C.EPOLLOUT:
-                # self.trigger_writer()
-                pass
-
-            else:
-                print "YARG", self.humanize_mask(event)
-
-        self.close()
+    def read_line(self):
+        return self.read_partition(self.line_break)
 
     def close(self):
         self.closed = True
-        self.recv_sender.close()
-        self.send_recver.close()
+        self.reader.close()
+        self.writer.close()
         self.hub.unregister(self.fileno)
         try:
-            self.conn.close()
+            self.d.close()
         except:
             pass
 
@@ -1090,7 +1132,7 @@ class Signal(object):
             info = C.ffi.new('struct signalfd_siginfo *')
             while True:
                 try:
-                    data = io.BytesIO(self.fd.recv_bytes(size))
+                    data = io.BytesIO(self.fd.read_bytes(size))
                 except Halt:
                     self.hub.unregister(self.fileno)
                     return
@@ -1216,32 +1258,32 @@ class Headers(object):
 
 class HTTPSocket(object):
 
-    def recv_headers(self):
+    def read_headers(self):
         headers = Headers()
         while True:
-            line = self.socket.recv_line()
+            line = self.socket.read_line()
             if not line:
                 break
             k, v = line.split(': ', 1)
             headers[k] = v.strip()
         return headers
 
-    def send_headers(self, headers):
+    def write_headers(self, headers):
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in headers.iteritems())
-        self.socket.send(headers+'\r\n'+'\r\n')
+        self.socket.write(headers+'\r\n'+'\r\n')
 
-    def recv_chunk(self):
-        length = int(self.socket.recv_line(), 16)
+    def read_chunk(self):
+        length = int(self.socket.read_line(), 16)
         if length:
-            chunk = self.socket.recv_bytes(length)
+            chunk = self.socket.read_bytes(length)
         else:
             chunk = ''
-        assert self.socket.recv_bytes(2) == '\r\n'
+        assert self.socket.read_bytes(2) == '\r\n'
         return chunk
 
-    def send_chunk(self, chunk):
-        self.socket.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+    def write_chunk(self, chunk):
+        self.socket.write('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
 
 
 class HTTPClient(HTTPSocket):
@@ -1287,14 +1329,15 @@ class HTTPClient(HTTPSocket):
         self.responses.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
-        version, code, message = self.socket.recv_line().split(' ', 2)
+        version, code, message = self.socket.read_line().split(' ', 2)
         code = int(code)
         status = self.Status(version, code, message)
         # TODO:
         # if status.code == 408:
 
-        headers = self.recv_headers()
+        headers = self.read_headers()
         sender, recver = self.hub.pipe()
+
         response.send(self.Response(status, headers, recver))
 
         if headers.get('Connection') == 'Upgrade':
@@ -1303,14 +1346,14 @@ class HTTPClient(HTTPSocket):
 
         if headers.get('transfer-encoding') == 'chunked':
             while True:
-                chunk = self.recv_chunk()
+                chunk = self.read_chunk()
                 if not chunk:
                     break
                 sender.send(chunk)
         else:
             # TODO:
             # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-            body = self.socket.recv_bytes(int(headers['content-length']))
+            body = self.socket.read_bytes(int(headers['content-length']))
             sender.send(body)
 
         sender.close()
@@ -1332,16 +1375,16 @@ class HTTPClient(HTTPSocket):
             path += '?' + urllib.urlencode(params)
 
         request = '%s %s %s\r\n' % (method, path, HTTP_VERSION)
-        self.socket.send(request)
+        self.socket.write(request)
 
         # TODO: handle chunked transfers
         if data is not None:
             request_headers['Content-Length'] = len(data)
-        self.send_headers(request_headers)
+        self.write_headers(request_headers)
 
         # TODO: handle chunked transfers
         if data is not None:
-            self.socket.send(data)
+            self.socket.write(data)
 
         sender, recver = self.hub.pipe()
         self.responses.send(sender)
@@ -1464,16 +1507,16 @@ class HTTPServer(HTTPSocket):
         # TODO: handle Connection: close
         # TODO: spawn a green thread this request
         # TODO: handle when this is a websocket upgrade request
+
         while True:
             try:
-                request = self.recv_request()
-
+                request = self.read_request()
             except Halt:
                 return
 
             except Timeout:
                 print "Request Timeout"
-                self.send_response(408, 'Request Timeout')
+                self.write_response(408, 'Request Timeout')
                 self.socket.close()
                 return
 
@@ -1498,32 +1541,32 @@ class HTTPServer(HTTPSocket):
 
     def writer(self, response):
         code, message = response.recv()
-        self.send_response(code, message)
+        self.write_response(code, message)
 
         headers = response.recv()
-        self.send_headers(headers)
+        self.write_headers(headers)
 
         if headers.get('Connection') == 'Upgrade':
             return
 
         if headers.get('Transfer-Encoding') == 'chunked':
             for chunk in response:
-                self.send_chunk(chunk)
-            self.send_chunk('')
+                self.write_chunk(chunk)
+            self.write_chunk('')
         else:
-            self.socket.send(response.recv())
+            self.socket.write(response.recv())
 
-    def recv_request(self, timeout=None):
-        method, path, version = self.socket.recv_line().split(' ', 2)
-        headers = self.recv_headers()
+    def read_request(self, timeout=None):
+        method, path, version = self.socket.read_line().split(' ', 2)
+        headers = self.read_headers()
         request = self.Request(method, path, version, headers)
         # TODO: handle chunked transfers
         length = int(headers.get('content-length', 0))
-        request.body = self.socket.recv_bytes(length)
+        request.body = self.socket.read_bytes(length)
         return request
 
-    def send_response(self, code, message):
-        self.socket.send('HTTP/1.1 %s %s\r\n' % (code, message))
+    def write_response(self, code, message):
+        self.socket.write('HTTP/1.1 %s %s\r\n' % (code, message))
 
 
 class WebSocket(object):
@@ -1571,7 +1614,7 @@ class WebSocket(object):
         return self.recver.recv()
 
     def _recv(self):
-        b1, length, = struct.unpack('!BB', self.socket.recv_bytes(2))
+        b1, length, = struct.unpack('!BB', self.socket.read_bytes(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 
         if self.is_client:
@@ -1587,23 +1630,23 @@ class WebSocket(object):
             # this is a control frame
             assert length <= 125
             if opcode == WebSocket.OP_CLOSE:
-                self.socket.recv_bytes(length)
+                self.socket.read_bytes(length)
                 self.socket.close()
                 raise Closed
 
         if length == 126:
-            length, = struct.unpack('!H', self.socket.recv_bytes(2))
+            length, = struct.unpack('!H', self.socket.read_bytes(2))
 
         elif length == 127:
-            length, = struct.unpack('!Q', self.socket.recv_bytes(8))
+            length, = struct.unpack('!Q', self.socket.read_bytes(8))
 
         assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
 
         if self.is_client:
-            return self.socket.recv_bytes(length)
+            return self.socket.read_bytes(length)
 
-        mask = self.socket.recv_bytes(4)
-        return self.mask(mask, self.socket.recv_bytes(length))
+        mask = self.socket.read_bytes(4)
+        return self.mask(mask, self.socket.read_bytes(length))
 
     def send(self, data):
         length = len(data)
@@ -1633,9 +1676,9 @@ class WebSocket(object):
 
         if self.is_client:
             mask = os.urandom(4)
-            self.socket.send(header + mask + self.mask(mask, data))
+            self.socket.write(header + mask + self.mask(mask, data))
         else:
-            self.socket.send(header + data)
+            self.socket.write(header + data)
 
     def close(self):
         if not self.socket.closed:
@@ -1644,7 +1687,7 @@ class WebSocket(object):
                 '!BB',
                 WebSocket.OP_CLOSE | WebSocket.FIN,
                 MASK)
-            self.socket.send(header)
+            self.socket.write(header)
             self.socket.close()
 
 
