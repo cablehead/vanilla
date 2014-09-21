@@ -662,6 +662,22 @@ class TestBroadcast(object):
         assert check.recv() == ('s2', True)
 
 
+class TestGate(object):
+    def test_gate(self):
+        h = vanilla.Hub()
+
+        g = h.gate()
+
+        pytest.raises(vanilla.Timeout, g.wait, 10)
+
+        h.spawn_later(10, g.trigger)
+        g.wait()
+        g.wait()
+
+        g.clear()
+        pytest.raises(vanilla.Timeout, g.wait, 10)
+
+
 class TestValue(object):
     def test_value(self):
         h = vanilla.Hub()
@@ -696,32 +712,44 @@ class TestDescriptor(object):
         assert set(vanilla.Descriptor.humanize_mask(mask)) == set(
             ['in', 'out', 'hup', 'err', 'et', 'rdhup'])
 
-    def test_recv_bytes(self):
+    def test_read_bytes(self):
         h = vanilla.Hub()
         r, w = os.pipe()
 
         r = h.poll.fileno(r)
         w = h.poll.fileno(w)
 
-        w.send('123')
-        assert r.recv_bytes(2) == '12'
+        w.write('123')
+        assert r.read_bytes(2) == '12'
 
-        h.spawn_later(10, w.send, '2')
-        assert r.recv_bytes(2) == '32'
+        h.spawn_later(10, w.write, '2')
+        assert r.read_bytes(2) == '32'
         # TODO: h.stop()
 
-    def test_recv_partition(self):
+    def test_read_partition(self):
         h = vanilla.Hub()
         r, w = os.pipe()
 
         r = h.poll.fileno(r)
         w = h.poll.fileno(w)
 
-        w.send('12\r\n3')
-        assert r.recv_partition('\r\n') == '12'
+        w.write('12\r\n3')
+        assert r.read_partition('\r\n') == '12'
 
-        h.spawn_later(10, w.send, '2\r\n')
-        assert r.recv_partition('\r\n') == '32'
+        h.spawn_later(10, w.write, '2\r\n')
+        assert r.read_partition('\r\n') == '32'
+
+    def test_write_eagain(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
+
+        want = 'x' * 1024 * 1024
+        w.write(want)
+        got = r.read_bytes(len(want))
+        assert want == got
 
     def test_close_read(self):
         h = vanilla.Hub()
@@ -730,15 +758,15 @@ class TestDescriptor(object):
         r = h.poll.fileno(r)
         w = h.poll.fileno(w)
 
-        w.send('123')
-        assert r.recv_bytes(2) == '12'
+        w.write('123')
+        assert r.read_bytes(2) == '12'
 
-        os.close(r.conn.fileno())
-        w.send('2')
-        pytest.raises(vanilla.Closed, w.send, '3')
+        os.close(r.d.fileno())
+        w.write('2')
+        pytest.raises(vanilla.Closed, w.write, '3')
 
-        assert r.recv_bytes(1) == '3'
-        pytest.raises(vanilla.Closed, r.recv)
+        assert r.read_bytes(1) == '3'
+        pytest.raises(vanilla.Closed, r.read)
 
     def test_close_write(self):
         h = vanilla.Hub()
@@ -747,15 +775,15 @@ class TestDescriptor(object):
         r = h.poll.fileno(r)
         w = h.poll.fileno(w)
 
-        w.send('123')
-        assert r.recv_bytes(2) == '12'
+        w.write('123')
+        assert r.read_bytes(2) == '12'
 
-        os.close(w.conn.fileno())
-        w.send('2')
-        pytest.raises(vanilla.Closed, w.send, '3')
+        os.close(w.d.fileno())
+        w.write('2')
+        pytest.raises(vanilla.Closed, w.write, '3')
 
-        assert r.recv_bytes(1) == '3'
-        pytest.raises(vanilla.Closed, r.recv)
+        assert r.read_bytes(1) == '3'
+        pytest.raises(vanilla.Closed, r.read)
 
     def test_stop(self):
         h = vanilla.Hub()
@@ -800,11 +828,11 @@ class TestTCP(object):
 
         @h.tcp.listen()
         def server(conn):
-            conn.send(' '.join([conn.recv()]*2))
+            conn.write(' '.join([conn.read()]*2))
 
         client = h.tcp.connect(server.port)
-        client.send('Toby')
-        assert client.recv() == 'Toby Toby'
+        client.write('Toby')
+        assert client.read() == 'Toby Toby'
 
         h.stop()
 
@@ -820,7 +848,8 @@ class TestHTTP(object):
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
 
-        response = conn.get('/').recv()
+        response = conn.get('/')
+        response = response.recv()
         assert response.status.code == 200
         assert response.consume() == '/'
 
