@@ -1312,8 +1312,8 @@ class HTTPClient(HTTPSocket):
         self.socket = self.hub.tcp.connect(host=host, port=port)
 
         if parsed.scheme == 'https':
-            self.socket.conn = ssl.wrap_socket(self.socket.conn)
-            self.socket.conn.setblocking(0)
+            self.socket.d.conn = ssl.wrap_socket(self.socket.d.conn)
+            self.socket.d.conn.setblocking(0)
 
         self.socket.line_break = '\r\n'
 
