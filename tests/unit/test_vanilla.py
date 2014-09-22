@@ -827,6 +827,51 @@ class TestProtocol(object):
         assert recver.recv() == '1'
         assert recver.recv() == '2'
 
+    def test_length_prefixed(self):
+        import struct
+
+        h = vanilla.Hub()
+
+        def length_prefix_recver(upstream, downstream):
+            received = ''
+            while True:
+                while True:
+                    if len(received) >= 4:
+                        prefix, received = received[:4], received[4:]
+                        size, = struct.unpack('<I', prefix)
+                        break
+                    received += upstream.recv()
+
+                while True:
+                    if len(received) >= size:
+                        message, received = received[:size], received[size:]
+                        downstream.send(message)
+                        break
+                    received += upstream.recv()
+
+        def length_prefix_sender(message):
+            return struct.pack('<I', len(message)) + message
+
+        @h.tcp.listen()
+        def server(conn):
+            sender = h.pipe()
+            sender.map(length_prefix_sender).pipe(conn)
+            recver = conn.pipe(length_prefix_recver)
+            for message in recver:
+                sender.send(message*2)
+
+        conn = h.tcp.connect(server.port)
+
+        sender = h.pipe()
+        sender.map(length_prefix_sender).pipe(conn)
+        recver = conn.pipe(length_prefix_recver)
+
+        sender.send('foo')
+        sender.send('bar')
+
+        assert recver.recv() == 'foofoo'
+        assert recver.recv() == 'barbar'
+
 
 class TestSignal(object):
     # TODO: test abandoned
