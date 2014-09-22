@@ -797,6 +797,37 @@ class TestDescriptor(object):
         h.stop()
 
 
+class TestProtocol(object):
+    def test_protocol(self):
+        h = vanilla.Hub()
+        r, w = os.pipe()
+
+        r = h.poll.fileno(r)
+        w = h.poll.fileno(w)
+
+        sender = h.pipe()
+
+        @sender.map
+        def _(message):
+            return message + '\n'
+        _.pipe(w)
+
+        @r.pipe
+        def recver(upstream, downstream):
+            received = ''
+            while True:
+                keep, matched, extra = received.partition('\n')
+                if matched:
+                    received = extra
+                    downstream.send(keep)
+                    continue
+                received += upstream.recv()
+
+        sender.send('1\n2')
+        assert recver.recv() == '1'
+        assert recver.recv() == '2'
+
+
 class TestSignal(object):
     # TODO: test abandoned
     def test_signal(self):

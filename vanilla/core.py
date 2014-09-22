@@ -1043,6 +1043,13 @@ class Descriptor(object):
     def write(self, data):
         return self.writer.send(data)
 
+    # TODO: experimenting with this API
+    def pipe(self, sender):
+        return self.reader.pipe(sender)
+
+    def connect(self, recver):
+        return self.writer.connect(recver)
+
     def read_bytes(self, n):
         if n == 0:
             return ''
