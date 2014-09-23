@@ -338,12 +338,15 @@ class Sender(End):
         r2 = self.other
 
         r2.middle = m1
-        m1.recver = weakref.ref(r2, m1.on_abandoned)
-        m1.recver_current = m2.recver_current
-        del r1.middle
-        del s2.middle
         del m2.sender
         del m2.recver
+
+        del m1.recver
+        m1.recver = weakref.ref(r2, m1.on_abandoned)
+        m1.recver_current = m2.recver_current
+
+        del r1.middle
+        del s2.middle
         return r2
 
 
@@ -377,13 +380,34 @@ class Recver(End):
             except Halt:
                 break
 
-    def pipe(self, sender):
-        if callable(sender):
-            pipe = self.hub.pipe()
-            self.hub.spawn(sender, self, pipe.sender)
-            return pipe.recver
+    def pipe(self, target):
+        if callable(target):
+            """
+            Rewire:
+                s1 -> m1 <- r1
+            To:
+                s1 -> m2 <- r2 --> s2 -> m1 <- r1
+            """
+            s1 = self.other
+            m1 = self.middle
+            r1 = self
+
+            s2, r2 = self.hub.pipe()
+            m2 = r2.middle
+
+            s1.middle = m2
+            del m2.sender
+            m2.sender = weakref.ref(s1, m2.on_abandoned)
+
+            s2.middle = m1
+            del m1.sender
+            m1.sender = weakref.ref(s2, m1.on_abandoned)
+
+            self.hub.spawn(target, r2, s2)
+            return r1
+
         else:
-            return sender.connect(self)
+            return target.connect(self)
 
     def map(self, f):
         @self.pipe
@@ -1045,7 +1069,7 @@ class Descriptor(object):
 
     # TODO: experimenting with this API
     def pipe(self, sender):
-        return self.reader.recver.pipe(sender)
+        return self.reader.pipe(sender)
 
     def connect(self, recver):
         return self.writer.sender.connect(recver)

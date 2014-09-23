@@ -307,6 +307,21 @@ class TestPipe(object):
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
 
+    def test_pipe_to_function__with_current_recver(self):
+        h = vanilla.Hub()
+
+        p1 = h.pipe()
+
+        check = h.pipe()
+        h.spawn(lambda: check.send(p1.recv()))
+        h.sleep(1)
+
+        p1 = p1.map(lambda x: x + 1)
+        h.sleep(1)
+
+        p1.send(1)
+        assert check.recv() == 2
+
     def test_map(self):
         h = vanilla.Hub()
         p1 = h.pipe()
@@ -827,43 +842,46 @@ class TestProtocol(object):
 
         h = vanilla.Hub()
 
-        def length_prefix_recver(upstream, downstream):
-            received = ''
-            while True:
-                while True:
-                    if len(received) >= 4:
-                        prefix, received = received[:4], received[4:]
-                        size, = struct.unpack('<I', prefix)
-                        break
-                    received += upstream.recv()
+        def length_prefix(conn):
+            def sender(message):
+                return struct.pack('<I', len(message)) + message
 
+            def recver(upstream, downstream):
+                received = ''
                 while True:
-                    if len(received) >= size:
-                        message, received = received[:size], received[size:]
-                        downstream.send(message)
-                        break
-                    received += upstream.recv()
+                    while True:
+                        if len(received) >= 4:
+                            prefix, received = received[:4], received[4:]
+                            size, = struct.unpack('<I', prefix)
+                            break
+                        received += upstream.recv()
 
-        def length_prefix_sender(message):
-            return struct.pack('<I', len(message)) + message
+                    while True:
+                        if len(received) >= size:
+                            message, received = \
+                                received[:size], received[size:]
+                            downstream.send(message)
+                            break
+                        received += upstream.recv()
+
+            conn.writer = h.pipe().map(sender).pipe(conn.writer.sender)
+            conn.reader = conn.reader.pipe(recver)
+            return conn
 
         @h.tcp.listen()
         def server(conn):
-            sender = h.pipe().map(length_prefix_sender).pipe(conn)
-            recver = conn.pipe(length_prefix_recver)
-            for message in recver:
-                sender.send(message*2)
+            conn = length_prefix(conn)
+            for message in conn.reader.recver:
+                conn.writer.send(message*2)
 
         conn = h.tcp.connect(server.port)
+        conn = length_prefix(conn)
 
-        sender = h.pipe().map(length_prefix_sender).pipe(conn)
-        recver = conn.pipe(length_prefix_recver)
+        conn.writer.send('foo')
+        conn.writer.send('bar')
 
-        sender.send('foo')
-        sender.send('bar')
-
-        assert recver.recv() == 'foofoo'
-        assert recver.recv() == 'barbar'
+        assert conn.reader.recv() == 'foofoo'
+        assert conn.reader.recv() == 'barbar'
 
 
 class TestSignal(object):
