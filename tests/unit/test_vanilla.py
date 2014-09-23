@@ -307,7 +307,7 @@ class TestPipe(object):
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
 
-    def test_pipe_to_function__with_current_recver(self):
+    def test_pipe_to_function_with_current_recver(self):
         h = vanilla.Hub()
 
         p1 = h.pipe()
