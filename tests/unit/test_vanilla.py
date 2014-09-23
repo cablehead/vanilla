@@ -864,7 +864,7 @@ class TestProtocol(object):
                             break
                         received += upstream.recv()
 
-            conn.writer = h.pipe().map(sender).pipe(conn.writer.sender)
+            conn.writer = h.pipe().map(sender).pipe(conn.writer)
             conn.reader = conn.reader.pipe(recver)
             return conn
 

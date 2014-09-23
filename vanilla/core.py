@@ -206,7 +206,7 @@ class Paired(Paired):
         return self._replace(recver=self.recver.pipe(*a, **kw))
 
     def connect(self, *a, **kw):
-        return self._replace(sender=self.sender.connect(*a, **kw))
+        return self.sender.connect(*a, **kw)
 
     def map(self, *a, **kw):
         return self._replace(recver=self.recver.map(*a, **kw))
