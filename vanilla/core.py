@@ -203,16 +203,16 @@ class Paired(Paired):
         return self.recver.recv(*a, **kw)
 
     def pipe(self, *a, **kw):
-        return self.recver.pipe(*a, **kw)
+        return self._replace(recver=self.recver.pipe(*a, **kw))
 
     def connect(self, *a, **kw):
-        return self.sender.connect(*a, **kw)
+        return self._replace(sender=self.sender.connect(*a, **kw))
 
     def map(self, *a, **kw):
-        return self.recver.map(*a, **kw)
+        return self._replace(recver=self.recver.map(*a, **kw))
 
     def consume(self, *a, **kw):
-        return self.recver.consume(*a, **kw)
+        return self._replace(recver=self.recver.consume(*a, **kw))
 
     def close(self):
         self.sender.close()
@@ -1045,10 +1045,10 @@ class Descriptor(object):
 
     # TODO: experimenting with this API
     def pipe(self, sender):
-        return self.reader.pipe(sender)
+        return self.reader.recver.pipe(sender)
 
     def connect(self, recver):
-        return self.writer.connect(recver)
+        return self.writer.sender.connect(recver)
 
     def read_bytes(self, n):
         if n == 0:

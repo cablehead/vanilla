@@ -805,12 +805,7 @@ class TestProtocol(object):
         r = h.poll.fileno(r)
         w = h.poll.fileno(w)
 
-        sender = h.pipe()
-
-        @sender.map
-        def _(message):
-            return message + '\n'
-        _.pipe(w)
+        sender = h.pipe().map(lambda x: x + '\n').pipe(w)
 
         @r.pipe
         def recver(upstream, downstream):
@@ -854,16 +849,14 @@ class TestProtocol(object):
 
         @h.tcp.listen()
         def server(conn):
-            sender = h.pipe()
-            sender.map(length_prefix_sender).pipe(conn)
+            sender = h.pipe().map(length_prefix_sender).pipe(conn)
             recver = conn.pipe(length_prefix_recver)
             for message in recver:
                 sender.send(message*2)
 
         conn = h.tcp.connect(server.port)
 
-        sender = h.pipe()
-        sender.map(length_prefix_sender).pipe(conn)
+        sender = h.pipe().map(length_prefix_sender).pipe(conn)
         recver = conn.pipe(length_prefix_recver)
 
         sender.send('foo')
