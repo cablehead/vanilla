@@ -1215,6 +1215,13 @@ class protocols(object):
         conn.reader = conn.reader.pipe(recver)
         return conn
 
+    @staticmethod
+    def map(conn, encode, decode):
+        h = conn.hub
+        conn.writer = h.pipe().map(encode).pipe(conn.writer)
+        conn.reader = conn.reader.map(decode)
+        return conn
+
 
 class TCP(object):
     def __init__(self, hub):

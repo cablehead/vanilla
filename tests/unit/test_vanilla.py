@@ -886,8 +886,7 @@ class TestProtocol(object):
 
         def jsonencode(conn):
             conn = protocols.length_prefix(conn)
-            conn.writer = h.pipe().map(json.dumps).pipe(conn.writer)
-            conn.reader = conn.reader.map(json.loads)
+            conn = protocols.map(conn, json.dumps, json.loads)
             return conn
 
         @h.tcp.listen()
