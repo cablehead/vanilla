@@ -14,3 +14,4 @@ from vanilla.core import Scheduler
 from vanilla.core import C
 
 from vanilla.core import lazy
+from vanilla.core import protocols

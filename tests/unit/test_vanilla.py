@@ -7,6 +7,8 @@ import pytest
 
 import vanilla
 
+from vanilla import protocols
+
 
 # TODO: remove
 import logging
@@ -838,40 +840,16 @@ class TestProtocol(object):
         assert recver.recv() == '2'
 
     def test_length_prefixed(self):
-        import struct
-
         h = vanilla.Hub()
-
-        def length_prefix(conn):
-            def sender(message):
-                return struct.pack('<I', len(message)) + message
-
-            def recver(upstream, downstream):
-                def recvn(recver, received, n):
-                    while True:
-                        if len(received) >= n:
-                            return received[:n], received[n:]
-                        received += recver.recv()
-
-                received = ''
-                while True:
-                    prefix, received = recvn(upstream, received, 4)
-                    size, = struct.unpack('<I', prefix)
-                    message, received = recvn(upstream, received, size)
-                    downstream.send(message)
-
-            conn.writer = h.pipe().map(sender).pipe(conn.writer)
-            conn.reader = conn.reader.pipe(recver)
-            return conn
 
         @h.tcp.listen()
         def server(conn):
-            conn = length_prefix(conn)
+            conn = protocols.length_prefix(conn)
             for message in conn.reader.recver:
                 conn.writer.send(message*2)
 
         conn = h.tcp.connect(server.port)
-        conn = length_prefix(conn)
+        conn = protocols.length_prefix(conn)
 
         conn.writer.send('foo')
         conn.writer.send('bar')
