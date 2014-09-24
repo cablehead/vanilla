@@ -79,6 +79,16 @@
   interface
 
 ```
+    push, pull vs request, response
+
+    client:
+        conn.send(data)
+
+    server:
+        conn.recv()
+
+    vs
+
     client:
         response = conn.call(data)
         response.recv()
