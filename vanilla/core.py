@@ -251,8 +251,6 @@ class Pipe(object):
 
 
 class End(object):
-    __slots__ = ['middle']
-
     def __init__(self, pipe):
         self.middle = pipe
 
@@ -303,6 +301,8 @@ class End(object):
 
 
 class Sender(End):
+    __slots__ = ['middle', 'upstream']
+
     @property
     def current(self):
         return self.middle.sender_current
@@ -347,10 +347,18 @@ class Sender(End):
 
         del r1.middle
         del s2.middle
+
+        # if we are currently a chain, return the last recver of our chain
+        while True:
+            if getattr(r2, 'downstream', None) is None:
+                break
+            r2 = r2.downstream.other
         return r2
 
 
 class Recver(End):
+    __slots__ = ['middle', 'downstream']
+
     @property
     def current(self):
         return self.middle.recver_current
@@ -386,7 +394,7 @@ class Recver(End):
             Rewire:
                 s1 -> m1 <- r1
             To:
-                s1 -> m2 <- r2 --> s2 -> m1 <- r1
+                s1 -> m2 <- target(r2,  s2) -> m1 <- r1
             """
             s1 = self.other
             m1 = self.middle
@@ -402,6 +410,12 @@ class Recver(End):
             s2.middle = m1
             del m1.sender
             m1.sender = weakref.ref(s2, m1.on_abandoned)
+
+            # link the two ends in the closure with a strong reference to
+            # prevent them from being garbage collected if this piped section
+            # is used in a chain
+            r2.downstream = s2
+            s2.upstream = r2
 
             self.hub.spawn(target, r2, s2)
             return r1

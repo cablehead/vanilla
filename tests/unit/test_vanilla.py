@@ -335,6 +335,28 @@ class TestPipe(object):
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
 
+    def test_chain(self):
+        h = vanilla.Hub()
+
+        p = h.pipe()
+        # s1, m1, r1
+        # p is: s2, r1
+
+        p = h.pipe().map(lambda x: x + 1).pipe(p)
+        # s2, m3, f(r3, s3), m2, r2 --> s1, m1, r1
+        # s2, m3, f(r3, s3), m2, r1
+        # p is: s2, r1
+
+        p = h.pipe().map(lambda x: x * 2).pipe(p)
+        # s4, m5, f(r5, s5), m4, r4 --> s2, m3, f(r3, s3), m2, r1
+        # s4, m5, f(r5, s5), m4, f(r3, s3), m2, r1
+        # p is: s4, r1
+
+        h.spawn(p.send, 2)
+        h.sleep(1)
+
+        assert p.recv() == 5
+
     def test_consume(self):
         h = vanilla.Hub()
         p = h.pipe()
@@ -856,6 +878,32 @@ class TestProtocol(object):
 
         assert conn.reader.recv() == 'foofoo'
         assert conn.reader.recv() == 'barbar'
+
+    def test_json(self):
+        h = vanilla.Hub()
+
+        import json
+
+        def jsonencode(conn):
+            conn = protocols.length_prefix(conn)
+            conn.writer = h.pipe().map(json.dumps).pipe(conn.writer)
+            conn.reader = conn.reader.map(json.loads)
+            return conn
+
+        @h.tcp.listen()
+        def server(conn):
+            conn = jsonencode(conn)
+            for message in conn.reader.recver:
+                conn.writer.send(message)
+
+        conn = h.tcp.connect(server.port)
+        conn = jsonencode(conn)
+
+        conn.writer.send({'x': 1})
+        conn.writer.send({'x': 2})
+
+        assert conn.reader.recv() == {'x': 1}
+        assert conn.reader.recv() == {'x': 2}
 
 
 class TestSignal(object):
