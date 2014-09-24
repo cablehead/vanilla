@@ -847,22 +847,18 @@ class TestProtocol(object):
                 return struct.pack('<I', len(message)) + message
 
             def recver(upstream, downstream):
+                def recvn(recver, received, n):
+                    while True:
+                        if len(received) >= n:
+                            return received[:n], received[n:]
+                        received += recver.recv()
+
                 received = ''
                 while True:
-                    while True:
-                        if len(received) >= 4:
-                            prefix, received = received[:4], received[4:]
-                            size, = struct.unpack('<I', prefix)
-                            break
-                        received += upstream.recv()
-
-                    while True:
-                        if len(received) >= size:
-                            message, received = \
-                                received[:size], received[size:]
-                            downstream.send(message)
-                            break
-                        received += upstream.recv()
+                    prefix, received = recvn(upstream, received, 4)
+                    size, = struct.unpack('<I', prefix)
+                    message, received = recvn(upstream, received, size)
+                    downstream.send(message)
 
             conn.writer = h.pipe().map(sender).pipe(conn.writer)
             conn.reader = conn.reader.pipe(recver)
