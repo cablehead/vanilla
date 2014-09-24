@@ -905,6 +905,32 @@ class TestProtocol(object):
         assert conn.reader.recv() == {'x': 2}
 
 
+class TestRequestResponse(object):
+    def test_request_response(self):
+
+        class Request(object):
+            def __init__(self, hub):
+                self.hub = hub
+                self.server = self.hub.pipe()
+
+            def call(self, message):
+                response = self.hub.pipe()
+                self.server.send((message, response.sender))
+                return response.recver
+
+        h = vanilla.Hub()
+
+        r = Request(h)
+
+        @h.spawn
+        def _():
+            request, response = r.server.recv()
+            response.send(request*2)
+
+        response = r.call('Toby')
+        assert response.recv() == 'TobyToby'
+
+
 class TestSignal(object):
     # TODO: test abandoned
     def test_signal(self):
