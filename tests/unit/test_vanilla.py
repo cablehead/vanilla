@@ -930,6 +930,66 @@ class TestRequestResponse(object):
         response = r.call('Toby')
         assert response.recv() == 'TobyToby'
 
+    def test_request_response_over_tcp(self):
+        import struct
+
+        REQUEST = 1
+        RESPONSE = 2
+
+        class RequestResponse(object):
+            def __init__(self, hub, conn):
+                self.hub = hub
+                self.conn = protocols.length_prefix(conn)
+                self.route = 0
+                self.outstanding = {}
+                self.server = h.pipe()
+
+                @self.hub.spawn
+                def _():
+                    for message in conn.reader.recver:
+                        prefix, message = message[:8], message[8:]
+                        typ, route = struct.unpack('<II', prefix)
+
+                        if typ == REQUEST:
+                            response = self.hub.pipe()
+
+                            @response.consume
+                            def _(message):
+                                self.conn.writer.send(
+                                    struct.pack('<II', RESPONSE, route) +
+                                    message)
+                            self.server.send((message, response))
+
+                        elif typ == RESPONSE:
+                            response = self.outstanding.pop(route)
+                            response.send(message)
+
+            def call(self, message):
+                response = self.hub.pipe()
+                self.route += 1
+                self.outstanding[self.route] = response.sender
+                self.conn.writer.send(
+                    struct.pack('<II', REQUEST, self.route) + message)
+                return response.recver
+
+        h = vanilla.Hub()
+
+        @h.tcp.listen()
+        def server(conn):
+            conn = RequestResponse(h, conn)
+            while True:
+                request, response = conn.server.recv()
+                response.send(request)
+
+        conn = h.tcp.connect(server.port)
+        conn = RequestResponse(h, conn)
+
+        r1 = conn.call('Toby1')
+        r2 = conn.call('Toby2')
+
+        assert r1.recv() == 'Toby1'
+        assert r2.recv() == 'Toby2'
+
 
 class TestSignal(object):
     # TODO: test abandoned
