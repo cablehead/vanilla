@@ -16,10 +16,18 @@ and they had a baby, it might look like Vanilla.*
     'Hello World'
 ```
 
-## Documentation
+## Project Status
 
-Vanilla's API is still stabilizing and so the documentation is also still
-coming together:
+The current status is **experimental**. Vanilla can do a lot of interesting
+things, but it's APIs, particularly it's [message passing
+APIs](docs/primitives.md) are under rapid iteration. The HTTP implementation is
+very incomplete.
+
+However, I think the current status is suitable for hobby projects and it'd be
+great to have people using it for non-critical things to help shape how the
+APIs develop!
+
+## Documentation
 
 - [Message passing primitives](docs/primitives.md)
 - [Tutorial](docs/tutorial.md)
