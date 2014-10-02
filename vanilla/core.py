@@ -191,10 +191,31 @@ def init_C():
 C = init_C()
 
 
-Paired = collections.namedtuple('Paired', ['sender', 'recver'])
+Pair = collections.namedtuple('Pair', ['sender', 'recver'])
 
 
-class Paired(Paired):
+class Pair(Pair):
+    """
+    A Pair is a tuple of a Sender and a Recver. The pair only share a weakref
+    to each other so unless a reference is kept to both ends, the remaining end
+    will be *abandoned* and the entire pair will be garbage collected.
+
+    It's possible to call methods directly on the Pair tuple. A common
+    pattern though is to split up the tuple with the Sender used in one closure
+    and the Recver in another::
+
+        # create a Pipe Pair
+        p = h.pipe()
+
+        # call the Pair tuple directly
+        h.spawn(p.send, '1')
+        p.recv() # returns '1'
+
+        # split the sender and recver
+        sender, recver = p
+        sender.send('2')
+        recver.recv() # returns '2'
+    """
     def send(self, *a, **kw):
         return self.sender.send(*a, **kw)
 
@@ -236,7 +257,7 @@ class Pipe(object):
         self.sender = weakref.ref(sender, self.on_abandoned)
         self.sender_current = None
 
-        return Paired(sender, recver)
+        return Pair(sender, recver)
 
     def on_abandoned(self, *a, **kw):
         remaining = self.recver() or self.sender()
@@ -493,7 +514,7 @@ def Queue(hub, size):
     upstream.sender.connect = connect
 
     hub.spawn(main, upstream.recver, downstream.sender, size)
-    return Paired(upstream.sender, downstream.recver)
+    return Pair(upstream.sender, downstream.recver)
 
 
 class Dealer(object):
@@ -518,7 +539,7 @@ class Dealer(object):
         sender, recver = hub.pipe()
         recver.__class__ = Dealer.Recver
         recver.current = collections.deque()
-        return Paired(sender, recver)
+        return Pair(sender, recver)
 
 
 class Router(object):
@@ -546,7 +567,7 @@ class Router(object):
         sender, recver = hub.pipe()
         sender.__class__ = Router.Sender
         sender.current = collections.deque()
-        return Paired(sender, recver)
+        return Pair(sender, recver)
 
 
 class Broadcast(object):
@@ -671,6 +692,14 @@ class Scheduler(object):
 
 
 class Hub(object):
+    """
+    A Vanilla Hub is a handle to a self contained world of interwoven
+    coroutines. It includes an event loop which is responsibile for scheduling
+    which green thread should have context. Unlike most asynchronous libraries
+    this Hub is explicit and must be passed to coroutines that need to interact
+    with it. This is particularly nice for testing, as it makes it clear what's
+    going on, and other tests can't inadvertently effect each other.
+    """
     def __init__(self):
         self.log = logging.getLogger('%s.%s' % (__name__, self.__class__))
 
@@ -706,6 +735,9 @@ class Hub(object):
                     name=name))
 
     def pipe(self):
+        """
+        Returns a `Pipe`_ `Pair`_.
+        """
         return Pipe(self)
 
     def producer(self, f):
@@ -745,14 +777,32 @@ class Hub(object):
         sender.trigger = functools.partial(sender.send, True)
         return sender
 
+    def dealer(self):
+        """
+        Returns a `Dealer`_ `Pair`_.
+        """
+        return Dealer(self)
+
+    def router(self):
+        """
+        Returns a `Router`_ `Pair`_.
+        """
+        return Router(self)
+
     def queue(self, size):
+        """
+        Returns a `Queue`_ `Pair`_.
+        """
         return Queue(self, size)
 
     def channel(self, size=-1):
+        """
+        Returns a `Channel`_ `Pair`_.
+        """
         sender, recver = self.router()
         if size > 0:
             recver = recver.pipe(self.queue(size))
-        return Paired(sender, recver.pipe(self.dealer()))
+        return Pair(sender, recver.pipe(self.dealer()))
 
     def broadcast(self):
         return Broadcast(self)
@@ -763,25 +813,45 @@ class Hub(object):
     def value(self):
         return Value(self)
 
-    def dealer(self):
-        return Dealer(self)
+    def select(self, ends, timeout=-1):
+        """
+        An end is either a Sender or a Recver. select takes a list of *ends*
+        and blocks until *one* of them is ready. The select will block either
+        forever, or until the optional *timeout* is reached. *timeout* is in
+        milliseconds.
 
-    def router(self):
-        return Router(self)
+        It returns of tuple of (*end*, *value*) where *end* is the end that has
+        become ready. If the *end* is a Recver, then it will have already been
+        *recv*'d on which will be available as *value*. For Sender's however
+        the sender is still in a ready state waiting for a *send* and *value*
+        is None.
 
-    def select(self, pairs, timeout=-1):
-        for pair in pairs:
-            if pair.ready:
-                return pair, isinstance(pair, Recver) and pair.recv() or None
+        For example, the following is an appliance that takes an upstream
+        Recver and a downstream Sender. Sending to its upstream will alter it's
+        current state. This state can be read at anytime by receiving on its
+        downstream::
 
-        for pair in pairs:
-            pair.select()
+            def state(h, upstream, downstream):
+                current = None
+                while True:
+                    end, value = h.select([upstream, downstream])
+                    if end == upstream:
+                        current = value
+                    elif end == downstream:
+                        end.send(current)
+        """
+        for end in ends:
+            if end.ready:
+                return end, isinstance(end, Recver) and end.recv() or None
+
+        for end in ends:
+            end.select()
 
         try:
             fired, item = self.pause(timeout=timeout)
         finally:
-            for pair in pairs:
-                pair.unselect()
+            for end in ends:
+                end.unselect()
 
         return fired, item
 
@@ -819,12 +889,48 @@ class Hub(object):
         return target.throw(*a)
 
     def spawn(self, f, *a):
+        """
+        Schedules a new green thread to be created to run *f(\*a)* on the next
+        available tick::
+
+            def echo(pipe, s):
+                pipe.send(s)
+
+            p = h.pipe()
+            h.spawn(echo, p, 'hi')
+            p.recv() # returns 'hi'
+        """
         self.ready.append((f, a))
 
     def spawn_later(self, ms, f, *a):
+        """
+        Spawns a callable on a new green thread, scheduled for *ms*
+        milliseconds in the future::
+
+            def echo(pipe, s):
+                pipe.send(s)
+
+            p = h.pipe()
+            h.spawn_later(50, echo, p, 'hi')
+            p.recv() # returns 'hi' after 50ms
+        """
         self.scheduled.add(ms, f, *a)
 
     def sleep(self, ms=1):
+        """
+        Pauses the current green thread for *ms* milliseconds::
+
+            p = h.pipe()
+
+            @h.spawn
+            def _():
+                p.send('1')
+                h.sleep(50)
+                p.send('2')
+
+            p.recv() # returns '1'
+            p.recv() # returns '2' after 50 ms
+        """
         self.scheduled.add(ms, getcurrent())
         self.loop.switch()
 
