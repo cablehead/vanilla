@@ -14,7 +14,7 @@ requirements = [
     in open('requirements.txt').readlines() if not x.startswith('#')]
 
 description = "Fast, concurrent, micro server Python library" \
-              " http://cablehead.viewdocs.io/vanilla"
+              " http://vanillapy.readthedocs.org/"
 
 
 class PyTest(TestCommand):
@@ -39,7 +39,7 @@ setup(
     url='http://pypi.python.org/pypi/vanilla/',
     license='MIT',
     description=description,
-    long_description=open('README.md').read(),
+    long_description=open('README.rst').read(),
     tests_require=['pytest'],
     cmdclass={'test': PyTest},
 )
