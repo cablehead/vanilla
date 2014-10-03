@@ -2,6 +2,11 @@
 API Documentation
 =================
 
+.. testsetup::
+
+   import vanilla
+   h = vanilla.Hub()
+
 Core
 ====
 
@@ -51,22 +56,19 @@ Pair
 ----
 
 .. autoclass:: vanilla.core.Pair
-   :members:
-   :undoc-members:
+   :members: send, recv, pipe, map, consume, close
 
 Sender
 ------
 
 .. autoclass:: vanilla.core.Sender
-   :members:
-   :undoc-members:
+   :members: send
 
 Recver
 ------
 
 .. autoclass:: vanilla.core.Recver
    :members:
-   :undoc-members:
 
 Pipe
 ----

@@ -233,7 +233,7 @@ class Pair(Pair):
 
     def pipe(self, target):
         """
-        Pipes are Recver to the target (see Recver.pipe).
+        Pipes are Recver to the target; see :meth:`vanilla.core.Recver.pipe`
 
         Returns a new Pair of our current Sender and the target's Recver.
         """
@@ -241,7 +241,7 @@ class Pair(Pair):
 
     def map(self, f):
         """
-        Maps this Pair with *f* (see Recver.map).
+        Maps this Pair with *f*'; see :meth:`vanilla.core.Recver.map`
 
         Returns a new Pair of our current Sender the the mapped target's
         Recver.
@@ -250,7 +250,7 @@ class Pair(Pair):
 
     def consume(self, f):
         """
-        Consumes this Pair with *f* (see Recver.consume).
+        Consumes this Pair with *f*; see :meth:`vanilla.core.Recver.consume`.
 
         Returns only our Sender
         """
@@ -258,9 +258,6 @@ class Pair(Pair):
         return self.sender
 
     def connect(self, recver):
-        """
-        Connects our sender to *recver* (see Sender.connect).
-        """
         # TODO: shouldn't this return a new Pair?
         return self.sender.connect(recver)
 
@@ -369,6 +366,10 @@ class Sender(End):
         return self.middle.recver()
 
     def send(self, item, timeout=-1):
+        """
+        Send an *item* on this pair. This will block unless our Rever is ready,
+        either forever or until *timeout* milliseconds.
+        """
         if not self.ready:
             self.pause(timeout=timeout)
 
@@ -425,6 +426,10 @@ class Recver(End):
         return self.middle.sender()
 
     def recv(self, timeout=-1):
+        """
+        Receive and item from our Sender. This will block unless our Sender is
+        ready, either forever or unless *timeout* milliseconds.
+        """
         if self.ready:
             self.select()
             # switch directly, as we need to pause
@@ -442,6 +447,44 @@ class Recver(End):
                 break
 
     def pipe(self, target):
+        """
+        Pipes this Recver to *target*. *target* can either be `Sender`_ (or
+        `Pair`_) or a callable.
+
+        If *target* is a Sender, the two pairs are rewired so that sending on
+        this Recver's Sender will now be directed to the target's Recver::
+
+            sender1, recver1 = h.pipe()
+            sender2, recver2 = h.pipe()
+
+            recver1.pipe(sender2)
+
+            sender1.send('foo')
+            recver2.recv() # returns 'foo'
+
+        If *target* is a callable, a new `Pipe`_ will be created and spliced
+        between this current Recver and its Sender. The two ends of this new
+        Pipe are passed to the target callable to act as upstream and
+        downstream. The callable can then do any processing desired including
+        filtering, mapping and duplicating packets::
+
+            sender, recver = h.pipe()
+
+            def pipeline(upstream, downstream):
+                for i in upstream:
+                    if i % 2:
+                        downstream.send(i*2)
+
+            recver.pipe(pipeline)
+
+            @h.spawn
+            def _():
+                for i in xrange(10):
+                    sender.send(i)
+
+            recver.recv() # returns 2 (0 is filtered, so 1*2)
+            recver.recv() # returns 6 (2 is filtered, so 3*2)
+        """
         if callable(target):
             """
             Rewire:
@@ -477,6 +520,9 @@ class Recver(End):
             return target.connect(self)
 
     def map(self, f):
+        """
+        Map
+        """
         @self.pipe
         def recver(recver, sender):
             for item in recver:
@@ -484,6 +530,9 @@ class Recver(End):
         return recver
 
     def consume(self, f):
+        """
+        Consume
+        """
         @self.hub.spawn
         def _():
             for item in self:
