@@ -521,7 +521,17 @@ class Recver(End):
 
     def map(self, f):
         """
-        Map
+        *f* is a callable that takes a single argument. All values sent on this
+        Recver's Sender will be passed to *f* to be transformed::
+
+            def double(i):
+                return i * 2
+
+            sender, recver = h.pipe()
+            recver.map(double)
+
+            h.spawn(sender.send, 2)
+            recver.recv() # returns 4
         """
         @self.pipe
         def recver(recver, sender):
@@ -531,7 +541,18 @@ class Recver(End):
 
     def consume(self, f):
         """
-        Consume
+        Creates a sink which consumes all values for this Recver. *f* is a
+        callable which takes a single argument. All values sent on this
+        Recver's Sender will be passed to *f* for processing. Unlike *map*
+        however consume terminates this chain::
+
+            sender, recver = h.pipe
+
+            @recver.consume
+            def _(data):
+                logging.info(data)
+
+            sender.send('Hello') # logs 'Hello'
         """
         @self.hub.spawn
         def _():
@@ -823,11 +844,51 @@ class Hub(object):
         return Pipe(self)
 
     def producer(self, f):
+        """
+        Convenience to create a `Pipe`_. *f* is a callable that takes the
+        `Sender`_ end of this Pipe and the corresponding `Recver`_ is
+        returned::
+
+            def counter(sender):
+                i = 0
+                while True:
+                    i += 1
+                    sender.send(i)
+
+            recver = h.producer(counter)
+
+            recver.recv() # returns 1
+            recver.recv() # returns 2
+        """
         sender, recver = self.pipe()
         self.spawn(f, sender)
         return recver
 
+    def consumer(self, f):
+        # TODO: this isn't symmetric with producer. need to rethink
+        # TODO: don't form a closure
+        # TODO: test
+        sender, recver = self.pipe()
+
+        @self.spawn
+        def _():
+            for item in recver:
+                f(item)
+        return sender
+
     def pulse(self, ms, item=True):
+        """
+        Convenience to create a `Pipe`_ that will have *item* sent on it every
+        *ms* milliseconds. The `Recver`_ end of the Pipe is returned.
+
+        Note that since sends to a Pipe block until the Recver is ready, the
+        pulses will be throttled if the Recver is unable to keep up::
+
+            recver = h.pulse(500)
+
+            for _ in recver:
+                log.info('hello') # logs 'hello' every half a second
+        """
         @self.producer
         def _(sender):
             while True:
@@ -838,17 +899,6 @@ class Hub(object):
                 sender.send(item)
             sender.close()
         return _
-
-    def consumer(self, f):
-        # TODO: don't form a closure
-        # TODO: test
-        sender, recver = self.pipe()
-
-        @self.spawn
-        def _():
-            for item in recver:
-                f(item)
-        return sender
 
     def trigger(self, f):
         def consume(recver, f):

@@ -44,8 +44,6 @@ Pipe Conveniences
 
 .. automethod:: vanilla.Hub.producer
 
-.. automethod:: vanilla.Hub.consumer
-
 .. automethod:: vanilla.Hub.pulse
 
 
