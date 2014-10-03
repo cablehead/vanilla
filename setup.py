@@ -13,8 +13,9 @@ requirements = [
     x.strip() for x
     in open('requirements.txt').readlines() if not x.startswith('#')]
 
-description = "If Go and ZeroMQ had a baby, and that baby grew up and" \
-    " started dating PyPy, and they had a baby, it might look like Vanilla."
+
+description = "Fast, concurrent, micro server Python library " \
+    "http://vanillapy.readthedocs.org/"
 
 
 class PyTest(TestCommand):
