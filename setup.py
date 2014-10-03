@@ -36,7 +36,7 @@ setup(
     author_email='andy@thecablelounge.com',
     install_requires=requirements,
     packages=find_packages(),
-    url='http://pypi.python.org/pypi/vanilla/',
+    url='https://github.com/cablehead/vanilla',
     license='MIT',
     description=description,
     long_description=open('README.rst').read(),
