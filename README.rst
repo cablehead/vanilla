@@ -25,10 +25,10 @@ Documentation
 Project Status
 --------------
 
-The current status is **experimental**. Vanilla can do a lot of
-interesting things, but it's APIs, particularly it's `message passing
-APIs <docs/old/primitives.md>`__ are under rapid iteration. The HTTP
-implementation is very incomplete.
+The current status is **experimental**. Vanilla can do a lot of interesting
+things, but it's APIs, particularly it's `message passing APIs
+<http://vanillapy.readthedocs.org/en/latest/api.html#pipe>`__ are under rapid
+iteration. The HTTP implementation is very incomplete.
 
 However, I think the current status is suitable for hobby projects and
 it'd be great to have people using it for non-critical things to help
