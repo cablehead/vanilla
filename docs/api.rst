@@ -71,14 +71,19 @@ Recver
 Pipe
 ----
 
+.. autoclass:: vanilla.core.Pipe
+
 Dealer
 ------
+
+.. autoclass:: vanilla.core.Dealer
 
 Router
 ------
 
+.. autoclass:: vanilla.core.Router
+
 Queue
 ------
 
-Channel
--------
+.. autoclass:: vanilla.core.Queue

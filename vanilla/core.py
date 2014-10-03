@@ -270,6 +270,32 @@ class Pair(Pair):
 
 
 class Pipe(object):
+    """
+    ::
+
+                 +------+
+        send --> | Pipe | --> recv
+                 +------+
+
+    The most basic primitive is the Pipe. A Pipe has exactly one sender and
+    exactly one recver. A Pipe has no buffering, so send and recvs will block
+    until there is a corresponding send or recv.
+
+    For example, the following code will deadlock as the sender will block,
+    preventing the recv from ever being called::
+
+        h = vanilla.Hub()
+        p = h.pipe()
+        p.send(1)     # deadlock
+        p.recv()
+
+    The following is OK as the send is spawned to a background green thread::
+
+        h = vanilla.Hub()
+        p = h.pipe()
+        h.spawn(p.send, 1)
+        p.recv()      # returns 1
+    """
     __slots__ = [
         'hub', 'recver', 'recver_current', 'sender', 'sender_current',
         'closed']
@@ -567,6 +593,25 @@ class Recver(End):
 
 
 def Queue(hub, size):
+    """
+    ::
+
+                 +----------+
+        send --> |  Queue   |
+                 | (buffer) | --> recv
+                 +----------+
+
+    A Queue may also only have exactly one sender and recver. A Queue however
+    has a fifo buffer of a custom size. Sends to the Queue won't block until
+    the buffer becomes full::
+
+        h = vanilla.Hub()
+        q = h.queue(1)
+        q.send(1)      # safe from deadlock
+        # q.send(1)    # this would deadlock however as the queue only has a
+                       # buffer size of 1
+        q.recv()       # returns 1
+    """
     assert size > 0
 
     def main(upstream, downstream, size):
@@ -621,6 +666,26 @@ def Queue(hub, size):
 
 
 class Dealer(object):
+    """
+    ::
+
+                 +--------+  /--> recv
+        send --> | Dealer | -+
+                 +--------+  \--> recv
+
+    A Dealer has exactly one sender but can have many recvers. It has no
+    buffer, so sends and recvs block until a corresponding green thread is
+    ready.  Sends are round robined to waiting recvers on a first come first
+    serve basis::
+
+        h = vanilla.Hub()
+        d = h.dealer()
+        # d.send(1)      # this would deadlock as there are no recvers
+        h.spawn(lambda: 'recv 1: %s' % d.recv())
+        h.spawn(lambda: 'recv 2: %s' % d.recv())
+        d.send(1)
+        d.send(2)
+    """
     class Recver(Recver):
         def select(self):
             assert getcurrent() not in self.current
@@ -646,6 +711,26 @@ class Dealer(object):
 
 
 class Router(object):
+    """
+    ::
+
+        send --\    +--------+
+                +-> | Router | --> recv
+        send --/    +--------+
+
+    A Router has exactly one recver but can have many senders. It has no
+    buffer, so sends and recvs block until a corresponding thread is ready.
+    Sends are accepted on a first come first servce basis::
+
+        h = vanilla.Hub()
+        r = h.router()
+        h.spawn(r.send, 3)
+        h.spawn(r.send, 2)
+        h.spawn(r.send, 1)
+        r.recv() # returns 3
+        r.recv() # returns 2
+        r.recv() # returns 1
+    """
     class Sender(Sender):
         def select(self):
             assert getcurrent() not in self.current
@@ -929,7 +1014,17 @@ class Hub(object):
 
     def channel(self, size=-1):
         """
-        Returns a `Channel`_ `Pair`_.
+        ::
+
+            send --\    +---------+  /--> recv
+                    +-> | Channel | -+
+            send --/    +---------+  \--> recv
+
+        A Channel can have many senders and many recvers. By default it is
+        unbuffered, but you can create buffered Channels by specifying a size.
+        They're structurally equivalent to channels in Go. It's implementation
+        is *literally* a `Router`_ piped to a `Dealer`_, with an optional
+        `Queue`_ in between.
         """
         sender, recver = self.router()
         if size > 0:
