@@ -1,4 +1,4 @@
-# ![Vanilla](docs/images/vanilla-logo.png) Welcome to Vanilla!
+# ![Vanilla](docs/_static/logo.png) Welcome to Vanilla!
 
 *If Go and ZeroMQ had a baby, and that baby grew up and started dating PyPy,
 and they had a baby, it might look like Vanilla.*
@@ -20,7 +20,7 @@ and they had a baby, it might look like Vanilla.*
 
 The current status is **experimental**. Vanilla can do a lot of interesting
 things, but it's APIs, particularly it's [message passing
-APIs](docs/primitives.md) are under rapid iteration. The HTTP implementation is
+APIs](docs/old/primitives.md) are under rapid iteration. The HTTP implementation is
 very incomplete.
 
 However, I think the current status is suitable for hobby projects and it'd be
@@ -29,7 +29,7 @@ APIs develop!
 
 ## Documentation
 
-- [Message passing primitives](docs/primitives.md)
+- [Message passing primitives](old/docs/primitives.md)
 - [Tutorial](docs/tutorial.md)
 
 ## Overview
@@ -63,26 +63,3 @@ with PyPy and with CPython 2.6 or 2.7. Vanilla is:
   Linux. But only Linux. This makes it easier to avoid introducing dependencies
   on cross platform asynchronous UI libraries like libevent, libev and libuv
   making vanilla PyPy support simple.
-
-## Acknowledgements
-
-The Twisted Project and the entire Twisted community for the strong grounding
-in [Evented Async][]. Libor Michalek and Slide Inc for showing me using [Python
-coroutines][] at phenomenal scale isn't completely insane. Mike Johnston and
-Fred Cheng for [Simplenote][], [Simperium][], the chance to experiment with how
-apps will work with realtime APIs and for making it possible for me to live in
-San Francisco. [Littleinc][] for giving me a chance to send a lot of messages
-and to open source [this project][] which I started working on while there.
-Justin Rosenthal for believing in me, 30% of the time. Andres Buritica who did
-a lot of the early HTTP and UDP fragment (not pushed just yet!) work and Alison
-Kosinski, the coolest fiancee in the world.
-
-[Evented Async]:
-    http://twistedmatrix.com/documents/8.2.0/core/howto/async.html
-    "Evented Async"
-
-[Python coroutines]: https://github.com/slideinc/gogreen   "Python coroutines"
-[Simplenote]:        http://simplenote.com/                "Simplenote"
-[Simperium]:         https://simperium.com/                "Simperium"
-[Littleinc]:         http://littleinc.com                  "Littleinc"
-[this project]:      https://github.com/cablehead/vanilla  "Vanilla"
