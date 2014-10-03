@@ -243,7 +243,7 @@ class Pair(Pair):
         """
         Maps this Pair with *f*'; see :meth:`vanilla.core.Recver.map`
 
-        Returns a new Pair of our current Sender the the mapped target's
+        Returns a new Pair of our current Sender and the mapped target's
         Recver.
         """
         return self._replace(recver=self.recver.map(f))
