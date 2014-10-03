@@ -11,11 +11,11 @@ Example
 
 .. code:: python
 
-        >>> h = vanilla.Hub()
-        >>> sender, recver = h.pipe()
-        >>> h.spawn(sender.send, 'Hello World')
-        >>> recver.recv()
-        'Hello World'
+    >>> h = vanilla.Hub()
+    >>> sender, recver = h.pipe()
+    >>> h.spawn(sender.send, 'Hello World')
+    >>> recver.recv()
+    'Hello World'
 
 Documentation
 -------------
