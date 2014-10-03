@@ -51,6 +51,22 @@ Pair
 ----
 
 .. autoclass:: vanilla.core.Pair
+   :members:
+   :undoc-members:
+
+Sender
+------
+
+.. autoclass:: vanilla.core.Sender
+   :members:
+   :undoc-members:
+
+Recver
+------
+
+.. autoclass:: vanilla.core.Recver
+   :members:
+   :undoc-members:
 
 Pipe
 ----

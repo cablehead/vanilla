@@ -196,13 +196,14 @@ Pair = collections.namedtuple('Pair', ['sender', 'recver'])
 
 class Pair(Pair):
     """
-    A Pair is a tuple of a Sender and a Recver. The pair only share a weakref
-    to each other so unless a reference is kept to both ends, the remaining end
-    will be *abandoned* and the entire pair will be garbage collected.
+    A Pair is a tuple of a `Sender`_ and a `Recver`_. The pair only share a
+    weakref to each other so unless a reference is kept to both ends, the
+    remaining end will be *abandoned* and the entire pair will be garbage
+    collected.
 
-    It's possible to call methods directly on the Pair tuple. A common
-    pattern though is to split up the tuple with the Sender used in one closure
-    and the Recver in another::
+    It's possible to call methods directly on the Pair tuple. A common pattern
+    though is to split up the tuple with the `Sender`_ used in one closure and
+    the `Recver`_ in another::
 
         # create a Pipe Pair
         p = h.pipe()
@@ -216,25 +217,57 @@ class Pair(Pair):
         sender.send('2')
         recver.recv() # returns '2'
     """
-    def send(self, *a, **kw):
-        return self.sender.send(*a, **kw)
+    def send(self, item, timeout=-1):
+        """
+        Send an *item* on this pair. This will block unless our Rever is ready,
+        either forever or until *timeout* milliseconds.
+        """
+        return self.sender.send(item, timeout=timeout)
 
-    def recv(self, *a, **kw):
-        return self.recver.recv(*a, **kw)
+    def recv(self, timeout=-1):
+        """
+        Receive and item from our Sender. This will block unless our Sender is
+        ready, either forever or unless *timeout* milliseconds.
+        """
+        return self.recver.recv(timeout=timeout)
 
-    def pipe(self, *a, **kw):
-        return self._replace(recver=self.recver.pipe(*a, **kw))
+    def pipe(self, target):
+        """
+        Pipes are Recver to the target (see Recver.pipe).
 
-    def connect(self, *a, **kw):
-        return self.sender.connect(*a, **kw)
+        Returns a new Pair of our current Sender and the target's Recver.
+        """
+        return self._replace(recver=self.recver.pipe(target))
 
-    def map(self, *a, **kw):
-        return self._replace(recver=self.recver.map(*a, **kw))
+    def map(self, f):
+        """
+        Maps this Pair with *f* (see Recver.map).
 
-    def consume(self, *a, **kw):
-        return self._replace(recver=self.recver.consume(*a, **kw))
+        Returns a new Pair of our current Sender the the mapped target's
+        Recver.
+        """
+        return self._replace(recver=self.recver.map(f))
+
+    def consume(self, f):
+        """
+        Consumes this Pair with *f* (see Recver.consume).
+
+        Returns only our Sender
+        """
+        self.recver.consume(f)
+        return self.sender
+
+    def connect(self, recver):
+        """
+        Connects our sender to *recver* (see Sender.connect).
+        """
+        # TODO: shouldn't this return a new Pair?
+        return self.sender.connect(recver)
 
     def close(self):
+        """
+        Closes both ends of this Pair
+        """
         self.sender.close()
         self.recver.close()
 
@@ -815,21 +848,21 @@ class Hub(object):
 
     def select(self, ends, timeout=-1):
         """
-        An end is either a Sender or a Recver. select takes a list of *ends*
-        and blocks until *one* of them is ready. The select will block either
-        forever, or until the optional *timeout* is reached. *timeout* is in
-        milliseconds.
+        An end is either a `Sender`_ or a `Recver`_. select takes a list of
+        *ends* and blocks until *one* of them is ready. The select will block
+        either forever, or until the optional *timeout* is reached. *timeout*
+        is in milliseconds.
 
         It returns of tuple of (*end*, *value*) where *end* is the end that has
-        become ready. If the *end* is a Recver, then it will have already been
-        *recv*'d on which will be available as *value*. For Sender's however
-        the sender is still in a ready state waiting for a *send* and *value*
-        is None.
+        become ready. If the *end* is a `Recver`_, then it will have already
+        been *recv*'d on which will be available as *value*. For `Sender`_'s
+        however the sender is still in a ready state waiting for a *send* and
+        *value* is None.
 
         For example, the following is an appliance that takes an upstream
-        Recver and a downstream Sender. Sending to its upstream will alter it's
-        current state. This state can be read at anytime by receiving on its
-        downstream::
+        `Recver`_ and a downstream `Sender`_. Sending to its upstream will
+        alter it's current state. This state can be read at anytime by
+        receiving on its downstream::
 
             def state(h, upstream, downstream):
                 current = None
