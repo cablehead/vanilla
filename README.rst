@@ -69,7 +69,7 @@ used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
    libevent, libev and libuv making vanilla PyPy support simple.
 
 .. _Read the Docs: http://vanillapy.readthedocs.org/
-.. |Vanilla| image:: docs/_static/logo.png
+.. |Vanilla| image:: http://vanillapy.readthedocs.org/en/latest/_static/logo.png
 .. |Build Status| image:: https://travis-ci.org/cablehead/vanilla.svg?branch=master
    :target: https://travis-ci.org/cablehead/vanilla
 .. |Coverage Status| image:: https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=master
