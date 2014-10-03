@@ -459,7 +459,7 @@ class Recver(End):
 
             recver1.pipe(sender2)
 
-            sender1.send('foo')
+            h.spawn(sender1.send, 'foo')
             recver2.recv() # returns 'foo'
 
         If *target* is a callable, a new `Pipe`_ will be created and spliced
