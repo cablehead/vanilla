@@ -9,7 +9,7 @@ PyPy, and they had a baby, it might look like Vanilla.*
 Example
 -------
 
-..code:: python
+::
 
     >>> h = vanilla.Hub()
     >>> sender, recver = h.pipe()
