@@ -22,18 +22,6 @@ Documentation
 
 `Read the Docs`_
 
-Project Status
---------------
-
-The current status is **experimental**. Vanilla can do a lot of interesting
-things, but it's APIs, particularly it's `message passing APIs
-<http://vanillapy.readthedocs.org/en/latest/api.html#pipe>`__ are under rapid
-iteration. The HTTP implementation is very incomplete.
-
-However, I think the current status is suitable for hobby projects and
-it'd be great to have people using it for non-critical things to help
-shape how the APIs develop!
-
 Overview
 --------
 
@@ -67,6 +55,25 @@ used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
    on Linux. But only Linux. This makes it easier to avoid introducing
    dependencies on cross platform asynchronous UI libraries like
    libevent, libev and libuv making vanilla PyPy support simple.
+
+Installation
+------------
+
+::
+
+    pip install vanilla
+
+Project Status
+--------------
+
+The current status is **experimental**. Vanilla can do a lot of interesting
+things, but it's APIs, particularly it's `message passing APIs
+<http://vanillapy.readthedocs.org/en/latest/api.html#pipe>`__ are under rapid
+iteration. The HTTP implementation is very incomplete.
+
+However, I think the current status is suitable for hobby projects and
+it'd be great to have people using it for non-critical things to help
+shape how the APIs develop!
 
 .. _Read the Docs: http://vanillapy.readthedocs.org/
 .. |Vanilla| image:: http://vanillapy.readthedocs.org/en/latest/_static/logo.png
