@@ -1370,6 +1370,11 @@ class Descriptor(object):
                 except (socket.error, OSError), e:
                     if e.errno == 11:  # EAGAIN
                         break
+
+                    # TODO: investigate handling non-blocking ssl correctly
+                    # perhaps SSL_set_fd() ??
+                    if isinstance(e, ssl.SSLError):
+                        break
                     self.reader.close()
                     return
                 if not data:
