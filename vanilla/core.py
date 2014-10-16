@@ -1882,7 +1882,13 @@ class HTTPServer(HTTPSocket):
             self.sender.close()
 
         def upgrade(self):
-            assert self.request.headers['Connection'].lower() == 'upgrade'
+            # TODO: the connection header can be a list of tokens, this should
+            # be handled more comprehensively
+            connection_tokens = [
+                x.strip().lower()
+                for x in self.request.headers['Connection'].split(',')]
+            assert 'upgrade' in connection_tokens
+
             assert self.request.headers['Upgrade'].lower() == 'websocket'
 
             key = self.request.headers['Sec-WebSocket-Key']
