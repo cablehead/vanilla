@@ -1167,6 +1167,20 @@ class TestHTTP(object):
         assert q.recv() == 50
         assert q.recv() == 20
 
+    def test_basic_auth(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            return request.headers['Authorization']
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        response = conn.get('/', auth=('foo', 'bar'))
+        response = response.recv()
+        assert response.consume() == 'Basic Zm9vOmJhcg=='
+
 
 class TestWebsocket(object):
     def test_websocket(self):

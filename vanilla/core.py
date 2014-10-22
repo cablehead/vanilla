@@ -1805,7 +1805,12 @@ class HTTPClient(HTTPSocket):
         if data is not None:
             self.socket.write(data)
 
-    def get(self, path='/', params=None, headers=None):
+    def get(self, path='/', params=None, headers=None, auth=None):
+        if auth:
+            if not headers:
+                headers = {}
+            headers['Authorization'] = \
+                'Basic ' + base64.b64encode('%s:%s' % auth)
         return self.request('GET', path, params, headers, None)
 
     def post(self, path='/', params=None, headers=None, data=''):
