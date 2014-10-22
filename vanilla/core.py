@@ -1733,7 +1733,7 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
-        self.requests = self.hub.queue(10)
+        self.requests = self.hub.router()
         self.requests.pipe(self.hub.consumer(self.writer))
 
         self.responses = self.hub.queue(10)
