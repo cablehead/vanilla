@@ -1733,6 +1733,9 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
+        self.requests = self.hub.queue(10)
+        self.requests.pipe(self.hub.consumer(self.writer))
+
         self.responses = self.hub.queue(10)
         self.responses.pipe(self.hub.consumer(self.reader))
 
@@ -1774,6 +1777,14 @@ class HTTPClient(HTTPSocket):
             headers=None,
             data=None):
 
+        self.requests.send((method, path, params, headers, data))
+        sender, recver = self.hub.pipe()
+        self.responses.send(sender)
+        return recver
+
+    def writer(self, request):
+        method, path, params, headers, data = request
+
         request_headers = {}
         request_headers.update(self.default_headers)
         if headers:
@@ -1793,10 +1804,6 @@ class HTTPClient(HTTPSocket):
         # TODO: handle chunked transfers
         if data is not None:
             self.socket.write(data)
-
-        sender, recver = self.hub.pipe()
-        self.responses.send(sender)
-        return recver
 
     def get(self, path='/', params=None, headers=None):
         return self.request('GET', path, params, headers, None)

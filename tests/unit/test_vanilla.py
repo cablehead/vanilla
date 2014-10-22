@@ -1142,6 +1142,31 @@ class TestHTTP(object):
         response = h.http.connect(uri).get('/').recv()
         assert response.status.code == 404
 
+    def test_overlap(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            t = request.path[1:]
+            h.sleep(int(t))
+            return t
+
+        q = h.queue(10)
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        def go(t):
+            t = str(t)
+            r = conn.get('/'+t).recv()
+            q.send(int(r.consume()))
+
+        h.spawn(go, 50)
+        h.spawn(go, 20)
+
+        assert q.recv() == 50
+        assert q.recv() == 20
+
 
 class TestWebsocket(object):
     def test_websocket(self):
