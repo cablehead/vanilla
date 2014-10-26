@@ -1651,6 +1651,9 @@ class Headers(object):
     def __setitem__(self, key, value):
         self.store[key.lower()] = self.Value(key, value)
 
+    def __contains__(self, key):
+        return key.lower() in self.store
+
     def __getitem__(self, key):
         return self.store[key.lower()].value
 
