@@ -22,6 +22,31 @@ Documentation
 
 `Read the Docs`_
 
+
+Installation
+------------
+
+Prerequisites for CPython 2.6/7/8
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vanilla depends on CFFI and greenlet which are 3rd party modules for CPython.
+You'll need some prerequisites in order to be able to install them.
+
+For debian/ubuntu::
+
+    apt-get install python-dev libffi-dev
+
+For OSX::
+
+    xcode-select --install
+
+Then
+~~~~
+
+::
+
+    pip install vanilla
+
 Overview
 --------
 
@@ -55,13 +80,6 @@ used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
    on Linux. But only Linux. This makes it easier to avoid introducing
    dependencies on cross platform asynchronous UI libraries like
    libevent, libev and libuv making vanilla PyPy support simple.
-
-Installation
-------------
-
-::
-
-    pip install vanilla
 
 Project Status
 --------------
