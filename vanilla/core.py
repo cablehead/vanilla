@@ -1710,6 +1710,9 @@ class HTTPClient(HTTPSocket):
         def consume(self):
             return ''.join(self.body)
 
+        def __repr__(self):
+            return 'HTTPClient.Response(status=%r)' % (self.status,)
+
     def __init__(self, hub, url):
         self.hub = hub
 
