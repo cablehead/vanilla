@@ -76,11 +76,6 @@ used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
    patching. Vanilla is *strict* about *never monkey patching*, with a focus on
    being explicit and easy to reason about.
 
--  **pragmatic**: it let's you quickly assemble services which will run
-   on Linux. But only Linux. This makes it easier to avoid introducing
-   dependencies on cross platform asynchronous UI libraries like
-   libevent, libev and libuv making vanilla PyPy support simple.
-
 Project Status
 --------------
 
