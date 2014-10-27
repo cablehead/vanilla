@@ -1739,10 +1739,10 @@ class HTTPClient(HTTPSocket):
             ('Host', parsed.netloc), ])
 
         # TODO: fix API
-        self.requests = self.hub.router()
+        self.requests = self.hub.router().pipe(self.hub.queue(10))
         self.requests.pipe(self.hub.consumer(self.writer))
 
-        self.responses = self.hub.queue(10)
+        self.responses = self.hub.router().pipe(self.hub.queue(10))
         self.responses.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
