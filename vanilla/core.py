@@ -57,10 +57,6 @@ def init_C():
 
     ffi.cdef("""
 
-    ssize_t read(int fd, void *buf, size_t count);
-
-    int eventfd(unsigned int initval, int flags);
-
     #define SIG_BLOCK ...
     #define SIG_UNBLOCK ...
     #define SIG_SETMASK ...
@@ -99,66 +95,12 @@ def init_C():
 
     int signalfd(int fd, const sigset_t *mask, int flags);
 
-    /*
-        INOTIFY */
-
-    #define IN_ACCESS ...         /* File was accessed. */
-    #define IN_MODIFY ...         /* File was modified. */
-    #define IN_ATTRIB ...         /* Metadata changed. */
-    #define IN_CLOSE_WRITE ...    /* Writtable file was closed. */
-    #define IN_CLOSE_NOWRITE ...  /* Unwrittable file closed. */
-    #define IN_OPEN ...           /* File was opened. */
-    #define IN_MOVED_FROM ...     /* File was moved from X. */
-    #define IN_MOVED_TO ...       /* File was moved to Y. */
-    #define IN_CREATE ...         /* Subfile was created. */
-    #define IN_DELETE ...         /* Subfile was deleted. */
-    #define IN_DELETE_SELF ...    /* Self was deleted. */
-    #define IN_MOVE_SELF ...      /* Self was moved. */
-
-    /* Events sent by the kernel. */
-    #define IN_UNMOUNT ...    /* Backing fs was unmounted. */
-    #define IN_Q_OVERFLOW ... /* Event queued overflowed. */
-    #define IN_IGNORED ...    /* File was ignored. */
-
-    /* Helper events. */
-    #define IN_CLOSE ... /* Close. */
-    #define IN_MOVE ...  /* Moves. */
-
-    /* Special flags. */
-    #define IN_ONLYDIR ...      /* Only watch the path if it is a directory. */
-    #define IN_DONT_FOLLOW ...  /* Do not follow a sym link. */
-    #define IN_EXCL_UNLINK ...  /* Exclude events on unlinked objects. */
-    #define IN_MASK_ADD ...     /* Add to the mask of an already existing
-                                   watch. */
-    #define IN_ISDIR ...        /* Event occurred against dir. */
-    #define IN_ONESHOT ...      /* Only send event once. */
-
-    /* All events which a program can wait on. */
-    #define IN_ALL_EVENTS ...
-
-    #define IN_NONBLOCK ...
-    #define IN_CLOEXEC ...
-
-    int inotify_init(void);
-    int inotify_init1(int flags);
-    int inotify_add_watch(int fd, const char *pathname, uint32_t mask);
-
-    /*
-        PRCTL */
-
-    #define PR_SET_PDEATHSIG ...
-
-    int prctl(int option, unsigned long arg2, unsigned long arg3,
-              unsigned long arg4, unsigned long arg5);
     """)
 
     C = ffi.verify("""
         #include <signal.h>
         #include <sys/signalfd.h>
-        #include <sys/eventfd.h>
-        #include <sys/inotify.h>
         #include <sys/epoll.h>
-        #include <sys/prctl.h>
     """)
 
     # stash some conveniences on C
