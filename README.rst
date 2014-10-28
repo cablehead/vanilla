@@ -26,23 +26,6 @@ Documentation
 Installation
 ------------
 
-Prerequisites for CPython 2.6/7/8
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Vanilla depends on CFFI and greenlet which are 3rd party modules for CPython.
-You'll need some prerequisites in order to be able to install them.
-
-For debian/ubuntu::
-
-    apt-get install python-dev libffi-dev
-
-For OSX::
-
-    xcode-select --install
-
-Then
-~~~~
-
 ::
 
     pip install vanilla
@@ -54,8 +37,7 @@ Vanilla is a fast, concurrent, micro server-library. It's designed to be
 used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
 
 -  **lightweight**: requires *no* external dependencies when using PyPy.
-   When using CPython you'll just need to install the Greenlet and CFFI
-   packages.
+   When using CPython you'll just need to install the Greenlet package.
 
 -  **concurrent**: for creating highly concurrent actor based
    architectures taking inspiration from Go to use coroutines and

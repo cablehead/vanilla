@@ -22,8 +22,7 @@ Vanilla is a fast, concurrent, micro server-library. It's designed to be
 used with PyPy and with CPython 2.6 or 2.7. Vanilla is:
 
 -  **lightweight**: requires *no* external dependencies when using PyPy.
-   When using CPython you'll just need to install the Greenlet and CFFI
-   packages.
+   When using CPython you'll just need to install the Greenlet package.
 
 -  **concurrent**: for creating highly concurrent actor based
    architectures taking inspiration from Go to use coroutines and
