@@ -10,6 +10,7 @@ import logging
 import urllib
 import struct
 import select
+import signal
 import socket
 import base64
 import fcntl
@@ -19,7 +20,6 @@ import uuid
 import time
 import ssl
 import os
-import io
 
 
 from greenlet import getcurrent
@@ -126,6 +126,13 @@ def init_C():
         flags = flags | os.O_NONBLOCK
         fcntl.fcntl(fd, fcntl.F_SETFL, flags)
         return fd
+
+    @Cdot
+    def pipe():
+        pipe_r, pipe_w = os.pipe()
+        pipe_r = C.unblock(pipe_r)
+        pipe_w = C.unblock(pipe_w)
+        return pipe_r, pipe_w
 
     return C
 
@@ -1415,57 +1422,47 @@ class Descriptor(object):
 class Signal(object):
     def __init__(self, hub):
         self.hub = hub
-        self.fileno = -1
-        self.count = 0
+        self.fd_r = None
+        self.fd_w = None
         self.mapper = {}
 
-    def subscribe(self, *signals):
-        router = self.hub.router()
-        for num in signals:
-            if num not in self.mapper:
-                self.mapper[num] = self.hub.broadcast()
-            self.mapper[num].subscribe().pipe(router)
-        self.reset()
-        return router.recver
-
-    def reset(self):
-        if self.count == len(self.mapper):
-            return
-
-        self.count = len(self.mapper)
-
-        if not self.count:
-            self.stop()
-            return
-
-        mask = C.sigset(*self.mapper.keys())
-        rc = C.sigprocmask(C.SIG_SETMASK, mask, C.NULL)
-        assert not rc
-        fileno = C.signalfd(self.fileno, mask, C.SFD_NONBLOCK | C.SFD_CLOEXEC)
-
-        if self.fileno == -1:
-            self.start(fileno)
-
-    def start(self, fileno):
-        self.fileno = fileno
-        self.fd = self.hub.poll.fileno(self.fileno)
+    def start(self):
+        pipe_r, pipe_w = C.pipe()
+        self.fd_r = self.hub.poll.fileno(pipe_r)
+        self.fd_w = self.hub.poll.fileno(pipe_w)
 
         @self.hub.spawn
         def _():
-            size = C.ffi.sizeof('struct signalfd_siginfo')
-            info = C.ffi.new('struct signalfd_siginfo *')
             while True:
                 try:
-                    data = io.BytesIO(self.fd.read_bytes(size))
+                    data = self.fd_r.read()
+                # TODO: cleanup shutdown
                 except Halt:
-                    self.hub.unregister(self.fileno)
-                    return
-                data.readinto(C.ffi.buffer(info))
-                num = info.ssi_signo
-                self.mapper[num].send(num)
+                    break
+                # TODO: add protocol to read byte at a time
+                assert len(data) == 1
+                sig = ord(data)
+                self.mapper[sig].send(sig)
 
-    def stop(self):
-        raise Exception('TODO')
+    def capture(self, sig):
+        if not self.fd_r:
+            self.start()
+
+        def handler(sig, frame):
+            self.fd_w.write(chr(sig))
+
+        signal.signal(sig, handler)
+
+    def subscribe(self, *signals):
+        router = self.hub.router()
+
+        for sig in signals:
+            if sig not in self.mapper:
+                self.capture(sig)
+                self.mapper[sig] = self.hub.broadcast()
+            self.mapper[sig].subscribe().pipe(router)
+
+        return router.recver
 
 
 class protocols(object):
