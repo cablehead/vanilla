@@ -15,7 +15,6 @@ import socket
 import base64
 import fcntl
 import heapq
-import cffi
 import uuid
 import time
 import ssl
@@ -53,72 +52,15 @@ class Abandoned(Halt):
 
 
 def init_C():
-    ffi = cffi.FFI()
+    # Placeholder; system CFFI and ctypes links will go here
+    class C(object):
+        pass
 
-    ffi.cdef("""
-
-    #define SIG_BLOCK ...
-    #define SIG_UNBLOCK ...
-    #define SIG_SETMASK ...
-
-    typedef struct { ...; } sigset_t;
-
-    int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-
-    int sigemptyset(sigset_t *set);
-    int sigfillset(sigset_t *set);
-    int sigaddset(sigset_t *set, int signum);
-    int sigdelset(sigset_t *set, int signum);
-    int sigismember(const sigset_t *set, int signum);
-
-    #define SFD_NONBLOCK ...
-    #define SFD_CLOEXEC ...
-
-    #define EAGAIN ...
-
-    #define EPOLLIN ...
-    #define EPOLLOUT ...
-    #define EPOLLET ...
-    #define EPOLLERR ...
-    #define EPOLLHUP ...
-    #define EPOLLRDHUP ...
-
-    #define SIGALRM ...
-    #define SIGINT ...
-    #define SIGTERM ...
-    #define SIGCHLD ...
-
-    struct signalfd_siginfo {
-        uint32_t ssi_signo;   /* Signal number */
-        ...;
-    };
-
-    int signalfd(int fd, const sigset_t *mask, int flags);
-
-    """)
-
-    C = ffi.verify("""
-        #include <signal.h>
-        #include <sys/signalfd.h>
-        #include <sys/epoll.h>
-    """)
+    C = C()
 
     # stash some conveniences on C
-    C.ffi = ffi
-    C.NULL = ffi.NULL
-
     def Cdot(f):
         setattr(C, f.__name__, f)
-
-    @Cdot
-    def sigset(*nums):
-        s = ffi.new('sigset_t *')
-        assert not C.sigemptyset(s)
-
-        for num in nums:
-            rc = C.sigaddset(s, num)
-            assert not rc, "signum: %s doesn't specify a valid signal." % num
-        return s
 
     @Cdot
     def unblock(fd):
@@ -1144,7 +1086,7 @@ class Hub(object):
             return
 
     def stop_on_term(self):
-        self.signal.subscribe(C.SIGINT, C.SIGTERM).recv()
+        self.signal.subscribe(signal.SIGINT, signal.SIGTERM).recv()
         self.stop()
 
     def run_task(self, task, *a):
@@ -1270,12 +1212,13 @@ class Poll(object):
 
 class Descriptor(object):
     FLAG_TO_HUMAN = [
-        (C.EPOLLIN, 'in'),
-        (C.EPOLLOUT, 'out'),
-        (C.EPOLLHUP, 'hup'),
-        (C.EPOLLERR, 'err'),
-        (C.EPOLLET, 'et'),
-        (C.EPOLLRDHUP, 'rdhup'), ]
+        (select.EPOLLIN, 'in'),
+        (select.EPOLLOUT, 'out'),
+        (select.EPOLLHUP, 'hup'),
+        (select.EPOLLERR, 'err'),
+        (select.EPOLLET, 'et'),
+        # (.EPOLLRDHUP, 'rdhup'), ]
+    ]
 
     @staticmethod
     def humanize_mask(mask):
@@ -1299,8 +1242,9 @@ class Descriptor(object):
 
         self.events = self.hub.register(
             self.fileno,
-            C.EPOLLIN | C.EPOLLOUT | C.EPOLLHUP | C.EPOLLERR | C.EPOLLET |
-            C.EPOLLRDHUP)
+            # TODO: is EPOLLRDHUP supported on BSD?
+            select.EPOLLIN | select.EPOLLOUT | select.EPOLLHUP |
+            select.EPOLLERR | select.EPOLLET)
 
         # TODO: if this is a read or write only file, don't set up both
         # directions
@@ -1350,10 +1294,10 @@ class Descriptor(object):
                     data = data[n:]
 
         for fileno, event in self.events:
-            if event & C.EPOLLIN:
+            if event & select.EPOLLIN:
                 reader.trigger()
 
-            elif event & C.EPOLLOUT:
+            elif event & select.EPOLLOUT:
                 writer.trigger()
 
             else:
@@ -1530,7 +1474,7 @@ class TCPListener(object):
         hub.spawn(self.accept)
 
     def accept(self):
-        ready = self.hub.register(self.sock.fileno(), C.EPOLLIN)
+        ready = self.hub.register(self.sock.fileno(), select.EPOLLIN)
         while True:
             try:
                 ready.recv()
