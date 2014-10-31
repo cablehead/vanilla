@@ -1196,6 +1196,20 @@ class TestHTTP(object):
         response = response.recv()
         assert response.consume() == 'Basic Zm9vOmJhcg=='
 
+    def test_connection_lost(self):
+        h = vanilla.Hub()
+
+        @h.http.listen()
+        def serve(request, response):
+            conn.socket.close()
+            return '.'
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        response = conn.get('/')
+        pytest.raises(vanilla.ConnectionLost, response.recv)
+
 
 class TestWebsocket(object):
     def test_websocket(self):

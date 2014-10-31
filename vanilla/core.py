@@ -51,6 +51,11 @@ class Abandoned(Halt):
     pass
 
 
+# TODO: think through HTTP Exceptions
+class ConnectionLost(Exception):
+    pass
+
+
 def init_C():
     # Placeholder; system CFFI and ctypes links will go here
     class C(object):
@@ -1632,7 +1637,13 @@ class HTTPClient(HTTPSocket):
         self.responses.pipe(self.hub.consumer(self.reader))
 
     def reader(self, response):
-        version, code, message = self.socket.read_line().split(' ', 2)
+        try:
+            version, code, message = self.socket.read_line().split(' ', 2)
+        except Halt:
+            # TODO: could we offer the ability to auto-reconnect?
+            response.send(ConnectionLost())
+            return
+
         code = int(code)
         status = self.Status(version, code, message)
         # TODO:
@@ -1858,21 +1869,25 @@ class HTTPServer(HTTPSocket):
             response.end(data)
 
     def writer(self, response):
-        code, message = response.recv()
-        self.write_response(code, message)
+        try:
+            code, message = response.recv()
+            self.write_response(code, message)
 
-        headers = response.recv()
-        self.write_headers(headers)
+            headers = response.recv()
+            self.write_headers(headers)
 
-        if headers.get('Connection') == 'Upgrade':
-            return
+            if headers.get('Connection') == 'Upgrade':
+                return
 
-        if headers.get('Transfer-Encoding') == 'chunked':
-            for chunk in response:
-                self.write_chunk(chunk)
-            self.write_chunk('')
-        else:
-            self.socket.write(response.recv())
+            if headers.get('Transfer-Encoding') == 'chunked':
+                for chunk in response:
+                    self.write_chunk(chunk)
+                self.write_chunk('')
+            else:
+                self.socket.write(response.recv())
+        except Halt:
+            # TODO: should this log as a http access log line?
+            log.error('HTTP Response: connection lost')
 
     def read_request(self, timeout=None):
         method, path, version = self.socket.read_line().split(' ', 2)

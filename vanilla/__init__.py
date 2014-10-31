@@ -3,6 +3,7 @@ __import__('pkg_resources').declare_namespace(__name__)
 
 from vanilla.core import Hub
 
+from vanilla.core import ConnectionLost
 from vanilla.core import Abandoned
 from vanilla.core import Timeout
 from vanilla.core import Closed
