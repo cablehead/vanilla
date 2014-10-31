@@ -453,7 +453,10 @@ class Recver(End):
         @self.pipe
         def recver(recver, sender):
             for item in recver:
-                sender.send(f(item))
+                try:
+                    sender.send(f(item))
+                except Exception, e:
+                    sender.send(e)
         return recver
 
     def consume(self, f):

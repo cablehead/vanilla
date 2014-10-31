@@ -336,6 +336,21 @@ class TestPipe(object):
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
 
+    def test_map_raises(self):
+        h = vanilla.Hub()
+
+        class E(Exception):
+            pass
+
+        def f(x):
+            raise E()
+
+        p1 = h.pipe()
+        p2 = p1.map(f)
+
+        h.spawn(p1.send, 1)
+        pytest.raises(E, p2.recv)
+
     def test_chain(self):
         h = vanilla.Hub()
 
