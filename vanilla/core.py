@@ -25,7 +25,7 @@ from greenlet import getcurrent
 from greenlet import greenlet
 
 
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 
 
 log = logging.getLogger(__name__)
