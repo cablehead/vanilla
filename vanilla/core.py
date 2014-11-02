@@ -1462,6 +1462,7 @@ class TCP(object):
 
     def connect(self, port, host='127.0.0.1'):
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # TODO: this shouldn't block on the connect
         conn.connect((host, port))
         return self.hub.poll.socket(conn)
 
@@ -1616,6 +1617,7 @@ class HTTPClient(HTTPSocket):
 
         self.socket = self.hub.tcp.connect(host=host, port=port)
 
+        # TODO: this shouldn't block on the SSL handshake
         if parsed.scheme == 'https':
             self.socket.d.conn = ssl.wrap_socket(self.socket.d.conn)
             self.socket.d.conn.setblocking(0)
