@@ -1643,7 +1643,11 @@ class HTTPClient(HTTPSocket):
             version, code, message = self.socket.read_line().split(' ', 2)
         except Halt:
             # TODO: could we offer the ability to auto-reconnect?
-            response.send(ConnectionLost())
+            try:
+                response.send(ConnectionLost())
+            except Abandoned:
+                # TODO: super need to think this through
+                pass
             return
 
         code = int(code)
