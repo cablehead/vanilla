@@ -223,6 +223,13 @@ class TestPipe(object):
         pytest.raises(vanilla.Timeout, recver.recv, timeout=10)
         assert recver.recv(timeout=20) == 12
 
+    def test_throw_with_timeout(self):
+        h = vanilla.Hub()
+        sender, recver = h.pipe()
+        h.spawn(sender.send, Exception())
+        pytest.raises(Exception, recver.recv, timeout=20)
+        assert h.scheduled.count == 0
+
     def test_select(self):
         h = vanilla.Hub()
 

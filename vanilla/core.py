@@ -987,13 +987,16 @@ class Hub(object):
                 timeout, getcurrent(), Timeout('timeout: %s' % timeout))
 
         assert getcurrent() != self.loop, "cannot pause the main loop"
-        resume = self.loop.switch()
 
-        if timeout > -1:
-            if isinstance(resume, Timeout):
-                raise resume
-            # since we didn't timeout, remove ourselves from scheduled
-            self.scheduled.remove(item)
+        resume = None
+        try:
+            resume = self.loop.switch()
+        finally:
+            if timeout > -1:
+                if isinstance(resume, Timeout):
+                    raise resume
+                # since we didn't timeout, remove ourselves from scheduled
+                self.scheduled.remove(item)
 
         # TODO: rework Value's is set test to be more natural
         if self.stopped.ready:
