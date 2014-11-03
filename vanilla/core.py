@@ -1660,17 +1660,21 @@ class HTTPClient(HTTPSocket):
             sender.close()
             return
 
-        if headers.get('transfer-encoding') == 'chunked':
-            while True:
-                chunk = self.read_chunk()
-                if not chunk:
-                    break
-                sender.send(chunk)
-        else:
-            # TODO:
-            # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-            body = self.socket.read_bytes(int(headers['content-length']))
-            sender.send(body)
+        try:
+            if headers.get('transfer-encoding') == 'chunked':
+                while True:
+                    chunk = self.read_chunk()
+                    if not chunk:
+                        break
+                    sender.send(chunk)
+            else:
+                # TODO:
+                # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
+                body = self.socket.read_bytes(int(headers['content-length']))
+                sender.send(body)
+        except Halt:
+            # TODO: could we offer the ability to auto-reconnect?
+            sender.send(ConnectionLost())
 
         sender.close()
 
