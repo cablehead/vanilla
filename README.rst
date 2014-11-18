@@ -72,7 +72,7 @@ shape how the APIs develop!
 
 .. _Read the Docs: http://vanillapy.readthedocs.org/
 .. |Vanilla| image:: http://vanillapy.readthedocs.org/en/latest/_static/logo.png
-.. |Build Status| image:: https://travis-ci.org/cablehead/vanilla.svg?branch=master
+.. |Build Status| image:: http://img.shields.io/travis/cablehead/vanilla.svg?style=flat-square
    :target: https://travis-ci.org/cablehead/vanilla
-.. |Coverage Status| image:: https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=master
+.. |Coverage Status| image:: http://img.shields.io/coveralls/cablehead/vanilla.svg?style=flat-square
    :target: https://coveralls.io/r/cablehead/vanilla?branch=master

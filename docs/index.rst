@@ -4,6 +4,8 @@ Welcome to Vanilla!
 *If Go and ZeroMQ had a baby, and that baby grew up and started dating PyPy,
 and they had a baby, it might look like Vanilla.*
 
+|Build Status| |Coverage Status|
+
 Example
 -------
 
@@ -72,7 +74,7 @@ time. Andres Buritica who did a lot of the early HTTP and UDP fragment
 the world.
 
 .. |Vanilla| image:: docs/images/vanilla-logo.png
-.. |Build Status| image:: https://travis-ci.org/cablehead/vanilla.svg?branch=master
+.. |Build Status| image:: https://img.shields.io/travis/cablehead/vanilla.svg?style=flat-square
    :target: https://travis-ci.org/cablehead/vanilla
-.. |Coverage Status| image:: https://coveralls.io/repos/cablehead/vanilla/badge.png?branch=master
+.. |Coverage Status| image:: https://img.shields.io/coveralls/cablehead/vanilla.svg?style=flat-square
    :target: https://coveralls.io/r/cablehead/vanilla?branch=master
