@@ -60,6 +60,7 @@ class ConnectionLost(Exception):
 class C(object):
     POLLIN = 1
     POLLOUT = 2
+    EAGAIN = hasattr(select, 'kqueue') and 35 or 11
 
     class KQueue(object):
         def __init__(self):
@@ -1312,7 +1313,7 @@ class Descriptor(object):
                 try:
                     data = self.d.read(4096)
                 except (socket.error, OSError), e:
-                    if e.errno == 11:  # EAGAIN
+                    if e.errno == C.EAGAIN:
                         break
 
                     # TODO: investigate handling non-blocking ssl correctly
@@ -1335,7 +1336,7 @@ class Descriptor(object):
                     try:
                         n = self.d.write(data)
                     except (socket.error, OSError), e:
-                        if e.errno == 11:  # EAGAIN
+                        if e.errno == C.EAGAIN:
                             writer.wait().clear()
                             continue
                         self.writer.close()
