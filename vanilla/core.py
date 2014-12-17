@@ -84,6 +84,8 @@ class C(object):
                 self.q.control([event], 0)
 
         def poll(self, timeout=None):
+            if timeout == -1:
+                timeout = None
             events = self.q.control(None, 3, timeout)
             return [(e.ident, self.to_C[e.filter]) for e in events]
 
