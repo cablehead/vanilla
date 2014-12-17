@@ -4,6 +4,7 @@ import collections
 import functools
 import importlib
 import urlparse
+import operator
 import weakref
 import hashlib
 import logging
@@ -56,35 +57,82 @@ class ConnectionLost(Exception):
     pass
 
 
-def init_C():
-    # Placeholder; system CFFI and ctypes links will go here
-    class C(object):
-        pass
+class C(object):
+    POLLIN = 1
+    POLLOUT = 2
 
-    C = C()
+    class KQueue(object):
+        def __init__(self):
+            self.q = select.kqueue()
 
-    # stash some conveniences on C
-    def Cdot(f):
-        setattr(C, f.__name__, f)
+            self.to_C = {
+                select.KQ_FILTER_READ: C.POLLIN,
+                select.KQ_FILTER_WRITE: C.POLLOUT, }
 
-    @Cdot
-    def unblock(fd):
+            self.from_C = dict((v, k) for k, v in self.to_C.iteritems())
+
+        def register(self, fd, *masks):
+            for mask in masks:
+                event = select.kevent(
+                    fd, filter=self.from_C[mask], flags=select.KQ_EV_ADD)
+                self.q.control([event], 0)
+
+        def unregister(self, fd, *masks):
+            for mask in masks:
+                event = select.kevent(
+                    fd, filter=self.from_C[mask], flags=select.KQ_EV_DELETE)
+                self.q.control([event], 0)
+
+        def poll(self, timeout=None):
+            events = self.q.control(None, 3, timeout)
+            return [(e.ident, self.to_C[e.filter]) for e in events]
+
+    class EPoll(object):
+        def __init__(self):
+            self.q = select.epoll()
+
+            self.to_C = {
+                select.EPOLLIN: C.POLLIN,
+                select.EPOLLOUT: C.POLLOUT, }
+
+            self.from_C = dict((v, k) for k, v in self.to_C.iteritems())
+
+        def register(self, fd, *masks):
+            masks = [self.from_C[x] for x in masks]
+            self.q.register(fd, reduce(operator.or_, masks, 0))
+
+        def unregister(self, fd, *masks):
+            self.q.unregister(fd)
+
+        def poll(self, timeout=None):
+            events = self.q.poll(timeout=timeout)
+            for fd, event in events:
+                for mask in self.to_C:
+                    if mask & event:
+                        yield fd, self.to_C[mask]
+
+    def poller(self):
+        if hasattr(select, 'kqueue'):
+            return C.KQueue()
+        elif hasattr(select, 'epoll'):
+            return C.EPoll()
+        else:
+            raise Exception('only epoll or kqueue supported')
+
+    def unblock(self, fd):
         flags = fcntl.fcntl(fd, fcntl.F_GETFL, 0)
         flags = flags | os.O_NONBLOCK
         fcntl.fcntl(fd, fcntl.F_SETFL, flags)
         return fd
 
-    @Cdot
-    def pipe():
+    def pipe(self):
         pipe_r, pipe_w = os.pipe()
         pipe_r = C.unblock(pipe_r)
         pipe_w = C.unblock(pipe_w)
         return pipe_r, pipe_w
 
-    return C
 
-
-C = init_C()
+C = C()
 
 
 Pair = collections.namedtuple('Pair', ['sender', 'recver'])
@@ -795,7 +843,7 @@ class Hub(object):
 
         self.stopped = self.value()
 
-        self.epoll = select.epoll()
+        self.q = C.poller()
         self.registered = {}
 
         self.poll = Poll(self)
@@ -1063,29 +1111,26 @@ class Hub(object):
         self.scheduled.add(ms, getcurrent())
         self.loop.switch()
 
-    def register(self, fd, mask):
-        # TODO: is it an issue that this will block our epoll if the sender
-        # isn't ready? -- ah, we should only poll on fds that are ready to recv
+    def register(self, fd, *masks):
         sender, recver = self.pipe()
-
-        self.registered[fd] = sender
-        self.epoll.register(fd, mask)
+        self.registered[fd] = (sender, masks)
+        self.q.register(fd, *masks)
         return recver
 
     def unregister(self, fd):
         if fd in self.registered:
+            sender, masks = self.registered.pop(fd)
             try:
-                self.epoll.unregister(fd)
+                self.q.unregister(fd, *masks)
             except:
                 pass
-            ch = self.registered.pop(fd)
-            ch.close()
+            sender.close()
 
     def stop(self):
         self.sleep(1)
 
-        for fd, ch in self.registered.items():
-            ch.send(Stop('stop'))
+        for sender, masks in self.registered.values():
+            sender.send(Stop('stop'))
 
         while self.scheduled:
             task, a = self.scheduled.pop()
@@ -1122,7 +1167,7 @@ class Hub(object):
             - if there's nothing registered and nothing scheduled, we've
               deadlocked, so stopped
 
-            - epoll on registered, with timeout of next scheduled, if something
+            - poll on registered, with timeout of next scheduled, if something
               is scheduled
         """
 
@@ -1153,11 +1198,11 @@ class Hub(object):
                 self.stopped.send(True)
                 return
 
-            # run epoll
+            # run poll
             events = None
             while True:
                 try:
-                    events = self.epoll.poll(timeout=timeout)
+                    events = self.q.poll(timeout=timeout)
                     break
                 # ignore IOError from signal interrupts
                 except IOError:
@@ -1171,9 +1216,10 @@ class Hub(object):
             else:
                 for fd, event in events:
                     if fd in self.registered:
+                        sender, _ = self.registered[fd]
                         # TODO: rethink this
-                        if self.registered[fd].ready:
-                            self.registered[fd].send((fd, event))
+                        if sender.ready:
+                            sender.send((fd, event))
 
 
 class Poll(object):
@@ -1223,12 +1269,8 @@ class Poll(object):
 
 class Descriptor(object):
     FLAG_TO_HUMAN = [
-        (select.EPOLLIN, 'in'),
-        (select.EPOLLOUT, 'out'),
-        (select.EPOLLHUP, 'hup'),
-        (select.EPOLLERR, 'err'),
-        (select.EPOLLET, 'et'),
-        # (.EPOLLRDHUP, 'rdhup'), ]
+        (C.POLLIN, 'in'),
+        (C.POLLOUT, 'out'),
     ]
 
     @staticmethod
@@ -1251,11 +1293,7 @@ class Descriptor(object):
         self.timeout = -1
         self.line_break = '\n'
 
-        self.events = self.hub.register(
-            self.fileno,
-            # TODO: is EPOLLRDHUP supported on BSD?
-            select.EPOLLIN | select.EPOLLOUT | select.EPOLLHUP |
-            select.EPOLLERR | select.EPOLLET)
+        self.events = self.hub.register(self.fileno, C.POLLIN, C.POLLOUT)
 
         # TODO: if this is a read or write only file, don't set up both
         # directions
@@ -1305,10 +1343,10 @@ class Descriptor(object):
                     data = data[n:]
 
         for fileno, event in self.events:
-            if event & select.EPOLLIN:
+            if event & C.POLLIN:
                 reader.trigger()
 
-            elif event & select.EPOLLOUT:
+            elif event & C.POLLOUT:
                 writer.trigger()
 
             else:
@@ -1486,7 +1524,7 @@ class TCPListener(object):
         hub.spawn(self.accept)
 
     def accept(self):
-        ready = self.hub.register(self.sock.fileno(), select.EPOLLIN)
+        ready = self.hub.register(self.sock.fileno(), C.POLLIN)
         while True:
             try:
                 ready.recv()

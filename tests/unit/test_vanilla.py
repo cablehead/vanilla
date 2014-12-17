@@ -1,5 +1,4 @@
 import signal
-import select
 import time
 import os
 import gc
@@ -770,10 +769,9 @@ class TestValue(object):
 
 class TestDescriptor(object):
     def test_human_mask(self):
-        mask = select.EPOLLIN | select.EPOLLOUT | select.EPOLLHUP | \
-            select.EPOLLERR | select.EPOLLET  # | C.EPOLLRDHUP
+        mask = vanilla.C.POLLIN | vanilla.C.POLLOUT
         assert set(vanilla.Descriptor.humanize_mask(mask)) == set(
-            ['in', 'out', 'hup', 'err', 'et'])
+            ['in', 'out'])
 
     def test_read_bytes(self):
         h = vanilla.Hub()
