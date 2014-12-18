@@ -26,7 +26,6 @@ TODO:
     - if the conn used to the http scrape closes
 
 - profile cpu usage
-
 """
 
 import logging
@@ -35,7 +34,7 @@ import sys
 import os
 import re
 
-from bs4 import BeautifulSoup
+import lxml.html
 
 import vanilla
 
@@ -61,19 +60,20 @@ class Collector(object):
                 headers=headers).recv()
 
             body = response.consume()
-            body = BeautifulSoup(body)
-
-            _id = lambda s: body.find(id=s)
+            tree = lxml.html.document_fromstring(body)
 
             data = {
                 'symbol': self.symbol.upper(),
-                'quote': _id('qwidget_lastsale').string,
-                'change': _id('qwidget_netchange').string,
-                'percent': _id('qwidget_percent').string,
-                'when': _id('qwidget_markettimedate').find('span').string,
+                'quote': tree.xpath('//div[@id="qwidget_lastsale"]')[0].text,
+                'change': tree.xpath('//div[@id="qwidget_netchange"]')[0].text,
+                'percent': tree.xpath('//div[@id="qwidget_percent"]')[0].text,
+                'when':
+                    tree.xpath(
+                        '//div[@id="qwidget_markettimedate"]//span')[0].text,
                 'up':
                     'arrow-green' in
-                    _id('qwidget-arrow').find('div')['class'], }
+                    tree.xpath(
+                        '//div[@id="qwidget-arrow"]/div')[0].get('class'), }
 
             if len(data['when']) < 11:
                 data['when'] += ' - market closed'
