@@ -101,7 +101,7 @@ class C(object):
             self.from_C = dict((v, k) for k, v in self.to_C.iteritems())
 
         def register(self, fd, *masks):
-            masks = [self.from_C[x] for x in masks]
+            masks = [self.from_C[x] for x in masks] + [select.EPOLLET]
             self.q.register(fd, reduce(operator.or_, masks, 0))
 
         def unregister(self, fd, *masks):
