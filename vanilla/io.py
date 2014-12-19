@@ -132,9 +132,28 @@ class Sender(object):
     def __init__(self, hub, fd):
         self.hub = hub
         self.fd = fd
+        self.p = hub.pipe()
+
+        @hub.spawn
+        def _():
+            events = hub.register(fd.fileno, POLLOUT)
+            data = None
+            for event in events:
+                while True:
+                    if not data:
+                        data = self.p.recv()
+
+                    try:
+                        n = self.fd.write(data)
+                    except (socket.error, OSError), e:
+                        if e.errno == EAGAIN:
+                            break
+                        raise
+
+                    data = data[n:]
 
     def send(self, data):
-        self.fd.write(data)
+        self.p.send(data)
 
 
 class Recver(object):
@@ -150,7 +169,7 @@ class Recver(object):
             for event in events:
                 while True:
                     try:
-                        data = self.fd.read(4096)
+                        data = self.fd.read(16384)
                     except (socket.error, OSError), e:
                         if e.errno == EAGAIN:
                             break

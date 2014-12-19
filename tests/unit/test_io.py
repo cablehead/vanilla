@@ -41,16 +41,24 @@ class TestPoll(object):
 
 class TestIO(object):
     def test_pipe(self):
-        print
-        print
         h = vanilla.Hub()
         sender, recver = h.io.pipe()
         pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
         sender.send('123')
         assert recver.recv() == '123'
-        # replace with a close
-        h.sleep(10)
 
+    def test_write_eagain(self):
+        h = vanilla.Hub()
+        sender, recver = h.io.pipe()
+
+        want = 'x' * 1024 * 1024
+        sender.send(want)
+
+        got = ''
+        while len(got) < len(want):
+            got += recver.recv()
+
+        assert want == got
 
     """
     def test_read_partition(self):
