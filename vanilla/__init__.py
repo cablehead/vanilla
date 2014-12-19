@@ -17,3 +17,4 @@ from vanilla.core import protocols
 
 from vanilla.io import POLLOUT
 from vanilla.io import POLLIN
+from vanilla.io import Poll

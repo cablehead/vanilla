@@ -67,18 +67,19 @@ elif hasattr(select, 'epoll'):
             self.from_ = dict((v, k) for k, v in self.to_.iteritems())
 
         def register(self, fd, *masks):
-            masks = [self.from_[x] for x in masks]
+            masks = [self.from_[x] for x in masks] + [select.EPOLLET]
             self.q.register(fd, reduce(operator.or_, masks, 0))
 
         def unregister(self, fd, *masks):
             self.q.unregister(fd)
 
-        def poll(self, timeout=None):
+        def poll(self, timeout=-1):
             events = self.q.poll(timeout=timeout)
-            for fd, event in events:
-                for mask in self.to_:
-                    if mask & event:
-                        yield fd, self.to_[mask]
+            return [
+                (fd, self.to_[mask])
+                for fd, event in events
+                for mask in self.to_
+                if mask & event]
 
 else:
     raise Exception('only epoll or kqueue supported')

@@ -10,6 +10,23 @@ import logging
 logging.basicConfig()
 
 
+class TestPoll(object):
+    def test_poll(self):
+        print
+        print
+        poll = vanilla.Poll()
+
+        r, w = os.pipe()
+
+        poll.register(r, vanilla.POLLIN)
+        assert poll.poll(timeout=0) == []
+
+        os.write(w, '123')
+        assert poll.poll() == [(r, vanilla.POLLIN)]
+
+        assert poll.poll(timeout=0) == []
+
+
 class TestIO(object):
     def test_pipe(self):
         print
