@@ -10,9 +10,10 @@ from vanilla.core import Closed
 from vanilla.core import Stop
 from vanilla.core import Halt
 
-from vanilla.core import Descriptor
 from vanilla.core import Scheduler
-from vanilla.core import C
 
 from vanilla.core import lazy
 from vanilla.core import protocols
+
+from vanilla.io import POLLOUT
+from vanilla.io import POLLIN

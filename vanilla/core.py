@@ -4,17 +4,14 @@ import collections
 import functools
 import importlib
 import urlparse
-import operator
 import weakref
 import hashlib
 import logging
 import urllib
 import struct
-import select
 import signal
 import socket
 import base64
-import fcntl
 import heapq
 import uuid
 import time
@@ -24,6 +21,8 @@ import os
 
 from greenlet import getcurrent
 from greenlet import greenlet
+
+import vanilla.io
 
 
 __version__ = '0.0.5'
@@ -55,87 +54,6 @@ class Abandoned(Halt):
 # TODO: think through HTTP Exceptions
 class ConnectionLost(Exception):
     pass
-
-
-class C(object):
-    POLLIN = 1
-    POLLOUT = 2
-    EAGAIN = hasattr(select, 'kqueue') and 35 or 11
-
-    class KQueue(object):
-        def __init__(self):
-            self.q = select.kqueue()
-
-            self.to_C = {
-                select.KQ_FILTER_READ: C.POLLIN,
-                select.KQ_FILTER_WRITE: C.POLLOUT, }
-
-            self.from_C = dict((v, k) for k, v in self.to_C.iteritems())
-
-        def register(self, fd, *masks):
-            for mask in masks:
-                event = select.kevent(
-                    fd, filter=self.from_C[mask], flags=select.KQ_EV_ADD)
-                self.q.control([event], 0)
-
-        def unregister(self, fd, *masks):
-            for mask in masks:
-                event = select.kevent(
-                    fd, filter=self.from_C[mask], flags=select.KQ_EV_DELETE)
-                self.q.control([event], 0)
-
-        def poll(self, timeout=None):
-            if timeout == -1:
-                timeout = None
-            events = self.q.control(None, 3, timeout)
-            return [(e.ident, self.to_C[e.filter]) for e in events]
-
-    class EPoll(object):
-        def __init__(self):
-            self.q = select.epoll()
-
-            self.to_C = {
-                select.EPOLLIN: C.POLLIN,
-                select.EPOLLOUT: C.POLLOUT, }
-
-            self.from_C = dict((v, k) for k, v in self.to_C.iteritems())
-
-        def register(self, fd, *masks):
-            masks = [self.from_C[x] for x in masks] + [select.EPOLLET]
-            self.q.register(fd, reduce(operator.or_, masks, 0))
-
-        def unregister(self, fd, *masks):
-            self.q.unregister(fd)
-
-        def poll(self, timeout=None):
-            events = self.q.poll(timeout=timeout)
-            for fd, event in events:
-                for mask in self.to_C:
-                    if mask & event:
-                        yield fd, self.to_C[mask]
-
-    def poller(self):
-        if hasattr(select, 'kqueue'):
-            return C.KQueue()
-        elif hasattr(select, 'epoll'):
-            return C.EPoll()
-        else:
-            raise Exception('only epoll or kqueue supported')
-
-    def unblock(self, fd):
-        flags = fcntl.fcntl(fd, fcntl.F_GETFL, 0)
-        flags = flags | os.O_NONBLOCK
-        fcntl.fcntl(fd, fcntl.F_SETFL, flags)
-        return fd
-
-    def pipe(self):
-        pipe_r, pipe_w = os.pipe()
-        pipe_r = C.unblock(pipe_r)
-        pipe_w = C.unblock(pipe_w)
-        return pipe_r, pipe_w
-
-
-C = C()
 
 
 Pair = collections.namedtuple('Pair', ['sender', 'recver'])
@@ -846,10 +764,10 @@ class Hub(object):
 
         self.stopped = self.value()
 
-        self.q = C.poller()
         self.registered = {}
 
-        self.poll = Poll(self)
+        self.poll = vanilla.io.Poll()
+
         self.signal = Signal(self)
         self.tcp = TCP(self)
         self.http = HTTP(self)
@@ -1117,14 +1035,14 @@ class Hub(object):
     def register(self, fd, *masks):
         sender, recver = self.pipe()
         self.registered[fd] = (sender, masks)
-        self.q.register(fd, *masks)
+        self.poll.register(fd, *masks)
         return recver
 
     def unregister(self, fd):
         if fd in self.registered:
             sender, masks = self.registered.pop(fd)
             try:
-                self.q.unregister(fd, *masks)
+                self.poll.unregister(fd, *masks)
             except:
                 pass
             sender.close()
@@ -1205,7 +1123,7 @@ class Hub(object):
             events = None
             while True:
                 try:
-                    events = self.q.poll(timeout=timeout)
+                    events = self.poll.poll(timeout=timeout)
                     break
                 # ignore IOError from signal interrupts
                 except IOError:
@@ -1223,196 +1141,6 @@ class Hub(object):
                         # TODO: rethink this
                         if sender.ready:
                             sender.send((fd, event))
-
-
-class Poll(object):
-    def __init__(self, hub):
-        self.hub = hub
-
-    def socket(self, conn):
-        class Adapt(object):
-            def __init__(self, conn):
-                self.conn = conn
-                self.fd = self.conn.fileno()
-
-            def fileno(self):
-                return self.fd
-
-            def read(self, n):
-                return self.conn.recv(n)
-
-            def write(self, data):
-                return self.conn.send(data)
-
-            def close(self):
-                self.conn.close()
-        return Descriptor(self.hub, Adapt(conn))
-
-    def fileno(self, fileno):
-        class Adapt(object):
-            def __init__(self, fd):
-                self.fd = fd
-
-            def fileno(self):
-                return self.fd
-
-            def read(self, n):
-                return os.read(self.fd, n)
-
-            def write(self, data):
-                return os.write(self.fd, data)
-
-            def close(self):
-                try:
-                    os.close(self.fd)
-                except OSError:
-                    pass
-        return Descriptor(self.hub, Adapt(fileno))
-
-
-class Descriptor(object):
-    FLAG_TO_HUMAN = [
-        (C.POLLIN, 'in'),
-        (C.POLLOUT, 'out'),
-    ]
-
-    @staticmethod
-    def humanize_mask(mask):
-        s = []
-        for k, v in Descriptor.FLAG_TO_HUMAN:
-            if k & mask:
-                s.append(v)
-        return s
-
-    def __init__(self, hub, d):
-        self.hub = hub
-
-        C.unblock(d.fileno())
-        self.d = d
-        self.fileno = self.d.fileno()
-
-        self.closed = False
-
-        self.timeout = -1
-        self.line_break = '\n'
-
-        self.events = self.hub.register(self.fileno, C.POLLIN, C.POLLOUT)
-
-        # TODO: if this is a read or write only file, don't set up both
-        # directions
-        self.read_buffer = ''
-        self.reader = self.hub.pipe()
-        self.writer = self.hub.pipe()
-
-        self.hub.spawn(self.main)
-
-    def main(self):
-        @self.hub.trigger
-        def reader():
-            while True:
-                try:
-                    data = self.d.read(4096)
-                except (socket.error, OSError), e:
-                    if e.errno == C.EAGAIN:
-                        break
-
-                    # TODO: investigate handling non-blocking ssl correctly
-                    # perhaps SSL_set_fd() ??
-                    if isinstance(e, ssl.SSLError):
-                        break
-                    self.reader.close()
-                    return
-                if not data:
-                    self.reader.close()
-                    return
-                self.reader.send(data)
-
-        writer = self.hub.gate()
-
-        @self.hub.spawn
-        def _():
-            for data in self.writer.recver:
-                while True:
-                    try:
-                        n = self.d.write(data)
-                    except (socket.error, OSError), e:
-                        if e.errno == C.EAGAIN:
-                            writer.wait().clear()
-                            continue
-                        self.writer.close()
-                        return
-                    if n == len(data):
-                        break
-                    data = data[n:]
-
-        for fileno, event in self.events:
-            if event & C.POLLIN:
-                reader.trigger()
-
-            elif event & C.POLLOUT:
-                writer.trigger()
-
-            else:
-                print "YARG", self.humanize_mask(event)
-
-        self.close()
-
-    def read(self):
-        return self.reader.recv(timeout=self.timeout)
-
-    def write(self, data):
-        return self.writer.send(data)
-
-    # TODO: experimenting with this API
-    def pipe(self, sender):
-        return self.reader.pipe(sender)
-
-    def connect(self, recver):
-        return self.writer.sender.connect(recver)
-
-    def read_bytes(self, n):
-        if n == 0:
-            return ''
-
-        received = len(self.read_buffer)
-        segments = [self.read_buffer]
-        while received < n:
-            segment = self.read()
-            segments.append(segment)
-            received += len(segment)
-
-        # if we've received too much, break the last segment and return the
-        # additional portion to pending
-        overage = received - n
-        if overage:
-            self.read_buffer = segments[-1][-1*(overage):]
-            segments[-1] = segments[-1][:-1*(overage)]
-        else:
-            self.read_buffer = ''
-
-        return ''.join(segments)
-
-    def read_partition(self, sep):
-        received = self.read_buffer
-        while True:
-            keep, matched, extra = received.partition(sep)
-            if matched:
-                self.read_buffer = extra
-                return keep
-            received += self.read()
-
-    def read_line(self):
-        return self.read_partition(self.line_break)
-
-    def close(self):
-        self.closed = True
-        self.reader.close()
-        self.writer.close()
-        self.hub.unregister(self.fileno)
-        try:
-            self.d.close()
-        except:
-            pass
 
 
 class Signal(object):
