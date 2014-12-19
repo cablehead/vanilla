@@ -147,12 +147,22 @@ class Recver(object):
         @hub.spawn
         def _():
             events = hub.register(fd.fileno, POLLIN)
-            while True:
-                event = events.recv()
-                print event
+            for event in events:
+                while True:
+                    try:
+                        data = self.fd.read(4096)
+                    except (socket.error, OSError), e:
+                        if e.errno == EAGAIN:
+                            break
+                        raise
 
-    def recv(self):
-        return self.fd.read(4096)
+                    if not data:
+                        raise Exception('not data')
+
+                    self.p.send(data)
+
+    def recv(self, timeout=-1):
+        return self.p.recv(timeout=timeout)
 
     def _init__(self, hub, d):
         self.closed = False

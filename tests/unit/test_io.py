@@ -45,15 +45,12 @@ class TestIO(object):
         print
         h = vanilla.Hub()
         sender, recver = h.io.pipe()
+        pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
         sender.send('123')
-        h.sleep(10000)
         assert recver.recv() == '123'
+        # replace with a close
+        h.sleep(10)
 
-    def test_eagain(self):
-        return
-        h = vanilla.Hub()
-        sender, recver = h.io.pipe()
-        assert recver.recv() == '123'
 
     """
     def test_read_partition(self):
