@@ -37,7 +37,9 @@ if hasattr(select, 'kqueue'):
         def register(self, fd, *masks):
             for mask in masks:
                 event = select.kevent(
-                    fd, filter=self.from_[mask], flags=select.KQ_EV_ADD)
+                    fd,
+                    filter=self.from_[mask],
+                    flags=select.KQ_EV_ADD|select.KQ_EV_CLEAR)
                 self.q.control([event], 0)
 
         def unregister(self, fd, *masks):

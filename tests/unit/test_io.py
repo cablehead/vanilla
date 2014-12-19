@@ -12,8 +12,6 @@ logging.basicConfig()
 
 class TestPoll(object):
     def test_poll(self):
-        print
-        print
         poll = vanilla.Poll()
 
         r, w = os.pipe()
@@ -21,10 +19,24 @@ class TestPoll(object):
         poll.register(r, vanilla.POLLIN)
         assert poll.poll(timeout=0) == []
 
-        os.write(w, '123')
+        os.write(w, '1')
         assert poll.poll() == [(r, vanilla.POLLIN)]
-
+        # test event is cleared
         assert poll.poll(timeout=0) == []
+
+        # test event is reset on new write after read
+        assert os.read(r, 4096) == '1'
+        assert poll.poll(timeout=0) == []
+        os.write(w, '2')
+        assert poll.poll() == [(r, vanilla.POLLIN)]
+        assert poll.poll(timeout=0) == []
+
+        # test event is reset on new write without read
+        os.write(w, '3')
+        assert poll.poll() == [(r, vanilla.POLLIN)]
+        assert poll.poll(timeout=0) == []
+
+        assert os.read(r, 4096) == '23'
 
 
 class TestIO(object):
