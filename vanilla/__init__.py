@@ -12,9 +12,10 @@ from vanilla.core import Halt
 
 from vanilla.core import Scheduler
 
-from vanilla.core import lazy
 from vanilla.core import protocols
+from vanilla.core import lazy
 
-from vanilla.io import POLLOUT
-from vanilla.io import POLLIN
-from vanilla.io import Poll
+from vanilla.poll import POLLOUT
+from vanilla.poll import POLLERR
+from vanilla.poll import POLLIN
+from vanilla.poll import Poll

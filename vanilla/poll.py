@@ -1,0 +1,81 @@
+import operator
+import select
+
+
+POLLIN = 1
+POLLOUT = 2
+POLLERR = 3
+
+
+if hasattr(select, 'kqueue'):
+    EAGAIN = 35
+
+    class Poll(object):
+        def __init__(self):
+            self.q = select.kqueue()
+
+            self.to_ = {
+                select.KQ_FILTER_READ: POLLIN,
+                select.KQ_FILTER_WRITE: POLLOUT, }
+
+            self.from_ = dict((v, k) for k, v in self.to_.iteritems())
+
+        def register(self, fd, *masks):
+            for mask in masks:
+                event = select.kevent(
+                    fd,
+                    filter=self.from_[mask],
+                    flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR)
+                self.q.control([event], 0)
+
+        def unregister(self, fd, *masks):
+            for mask in masks:
+                event = select.kevent(
+                    fd, filter=self.from_[mask], flags=select.KQ_EV_DELETE)
+                self.q.control([event], 0)
+
+        def poll(self, timeout=None):
+            if timeout == -1:
+                timeout = None
+            events = self.q.control(None, 4, timeout)
+            return [(
+                e.ident,
+                POLLERR if e.flags & (select.KQ_EV_EOF | select.KQ_EV_ERROR)
+                else self.to_[e.filter]) for e in events]
+
+
+elif hasattr(select, 'epoll'):
+    EAGAIN = 11
+
+    class Poll(object):
+        def __init__(self):
+            self.q = select.epoll()
+
+            self.to_ = {
+                select.EPOLLIN: POLLIN,
+                select.EPOLLOUT: POLLOUT, }
+
+            self.from_ = dict((v, k) for k, v in self.to_.iteritems())
+
+        def register(self, fd, *masks):
+            masks = [self.from_[x] for x in masks] + [
+                select.EPOLLET, select.EPOLLERR, select.EPOLLHUP]
+            self.q.register(fd, reduce(operator.or_, masks, 0))
+
+        def unregister(self, fd, *masks):
+            self.q.unregister(fd)
+
+        def poll(self, timeout=-1):
+            events = self.q.poll(timeout=timeout)
+            ret = []
+            for fd, event in events:
+                if event & (select.EPOLLERR | select.EPOLLHUP):
+                    ret.append((fd, POLLERR))
+                else:
+                    for mask in self.to_:
+                        if event & mask:
+                            ret.append((fd, self.to_[mask]))
+            return ret
+
+else:
+    raise Exception('only epoll or kqueue supported')
