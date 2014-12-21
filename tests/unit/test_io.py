@@ -54,23 +54,3 @@ class TestIO(object):
         recver.close()
         pytest.raises(vanilla.Closed, sender.send, '123')
         pytest.raises(vanilla.Closed, recver.recv)
-
-
-    """
-    def test_close_read(self):
-        h = vanilla.Hub()
-        r, w = os.pipe()
-
-        r = h.poll.fileno(r)
-        w = h.poll.fileno(w)
-
-        w.write('123')
-        assert r.read_bytes(2) == '12'
-
-        os.close(r.d.fileno())
-        w.write('2')
-        pytest.raises(vanilla.Closed, w.write, '3')
-
-        assert r.read_bytes(1) == '3'
-        pytest.raises(vanilla.Closed, r.read)
-    """
