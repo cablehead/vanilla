@@ -72,7 +72,7 @@ class Sender(object):
             for event in events:
                 if self.pulse.sender.ready:
                     self.pulse.send(True)
-            print "CLOSED"
+            self.close()
 
     def send(self, data):
         # TODO: serialize with a semaphore
@@ -88,6 +88,10 @@ class Sender(object):
             if n == len(data):
                 break
             data = data[n:]
+
+    def close(self):
+        os.close(self.fd.fileno)
+        # TODO: unregister
 
 
 class Recver(object):
@@ -118,6 +122,12 @@ class Recver(object):
     def recv(self, timeout=-1):
         return self.p.recv(timeout=timeout)
 
+    def close(self):
+        os.close(self.fd.fileno)
+        self.p.close()
+        # TODO: unregister
+
+    """
     def _init__(self, hub, d):
         self.closed = False
 
@@ -242,3 +252,4 @@ class Recver(object):
             self.d.close()
         except:
             pass
+    """

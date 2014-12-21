@@ -41,12 +41,20 @@ class TestIO(object):
         h.sleep(1)
         sender.send('456')
 
-        os.close(sender.fd.fileno)
+        sender.close()
         pytest.raises(vanilla.Closed, sender.send, '789')
 
         assert recver.recv() == '123'
         assert recver.recv() == '456'
         pytest.raises(vanilla.Closed, recver.recv)
+
+    def test_read_close(self):
+        h = vanilla.Hub()
+        sender, recver = h.io.pipe()
+        recver.close()
+        pytest.raises(vanilla.Closed, sender.send, '123')
+        pytest.raises(vanilla.Closed, recver.recv)
+
 
     """
     def test_close_read(self):
