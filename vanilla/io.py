@@ -1,13 +1,10 @@
-import operator
-import select
 import socket
 import fcntl
 import ssl
 import os
 
-
-POLLIN = 1
-POLLOUT = 2
+import vanilla.poll
+import vanilla.core
 
 
 class __plugin__(object):
@@ -19,72 +16,6 @@ class __plugin__(object):
         recver = Recver(self.hub, FD_from_fileno(r))
         sender = Sender(self.hub, FD_from_fileno(w))
         return sender, recver
-
-
-if hasattr(select, 'kqueue'):
-    EAGAIN = 35
-
-    class Poll(object):
-        def __init__(self):
-            self.q = select.kqueue()
-
-            self.to_ = {
-                select.KQ_FILTER_READ: POLLIN,
-                select.KQ_FILTER_WRITE: POLLOUT, }
-
-            self.from_ = dict((v, k) for k, v in self.to_.iteritems())
-
-        def register(self, fd, *masks):
-            for mask in masks:
-                event = select.kevent(
-                    fd,
-                    filter=self.from_[mask],
-                    flags=select.KQ_EV_ADD|select.KQ_EV_CLEAR)
-                self.q.control([event], 0)
-
-        def unregister(self, fd, *masks):
-            for mask in masks:
-                event = select.kevent(
-                    fd, filter=self.from_[mask], flags=select.KQ_EV_DELETE)
-                self.q.control([event], 0)
-
-        def poll(self, timeout=None):
-            if timeout == -1:
-                timeout = None
-            events = self.q.control(None, 3, timeout)
-            return [(e.ident, self.to_[e.filter]) for e in events]
-
-
-elif hasattr(select, 'epoll'):
-    EAGAIN = 11
-
-    class Poll(object):
-        def __init__(self):
-            self.q = select.epoll()
-
-            self.to_ = {
-                select.EPOLLIN: POLLIN,
-                select.EPOLLOUT: POLLOUT, }
-
-            self.from_ = dict((v, k) for k, v in self.to_.iteritems())
-
-        def register(self, fd, *masks):
-            masks = [self.from_[x] for x in masks] + [select.EPOLLET]
-            self.q.register(fd, reduce(operator.or_, masks, 0))
-
-        def unregister(self, fd, *masks):
-            self.q.unregister(fd)
-
-        def poll(self, timeout=-1):
-            events = self.q.poll(timeout=timeout)
-            return [
-                (fd, self.to_[mask])
-                for fd, event in events
-                for mask in self.to_
-                if mask & event]
-
-else:
-    raise Exception('only epoll or kqueue supported')
 
 
 def unblock(fileno):
@@ -132,28 +63,31 @@ class Sender(object):
     def __init__(self, hub, fd):
         self.hub = hub
         self.fd = fd
-        self.p = hub.pipe()
+
+        self.pulse = hub.pipe()
 
         @hub.spawn
-        def _():
-            events = hub.register(fd.fileno, POLLOUT)
-            data = None
+        def pulse():
+            events = hub.register(fd.fileno, vanilla.poll.POLLOUT)
             for event in events:
-                while True:
-                    if not data:
-                        data = self.p.recv()
-
-                    try:
-                        n = self.fd.write(data)
-                    except (socket.error, OSError), e:
-                        if e.errno == EAGAIN:
-                            break
-                        raise
-
-                    data = data[n:]
+                if self.pulse.sender.ready:
+                    self.pulse.send(True)
+            print "CLOSED"
 
     def send(self, data):
-        self.p.send(data)
+        # TODO: serialize with a semaphore
+        # TODO: test more than one write at the same time
+        while True:
+            try:
+                n = self.fd.write(data)
+            except (socket.error, OSError), e:
+                if e.errno == vanilla.poll.EAGAIN:
+                    self.pulse.recv()
+                    continue
+                raise vanilla.core.Closed()
+            if n == len(data):
+                break
+            data = data[n:]
 
 
 class Recver(object):
@@ -165,18 +99,19 @@ class Recver(object):
 
         @hub.spawn
         def _():
-            events = hub.register(fd.fileno, POLLIN)
+            events = hub.register(fd.fileno, vanilla.poll.POLLIN)
             for event in events:
                 while True:
                     try:
                         data = self.fd.read(16384)
                     except (socket.error, OSError), e:
-                        if e.errno == EAGAIN:
+                        if e.errno == vanilla.poll.EAGAIN:
                             break
                         raise
 
                     if not data:
-                        raise Exception('not data')
+                        self.p.close()
+                        return
 
                     self.p.send(data)
 
@@ -189,7 +124,8 @@ class Recver(object):
         self.timeout = -1
         self.line_break = '\n'
 
-        self.events = self.hub.register(self.fileno, POLLIN, POLLOUT)
+        self.events = self.hub.register(
+            self.fileno, vanilla.poll.POLLIN, vanilla.poll.POLLOUT)
 
         # TODO: if this is a read or write only file, don't set up both
         # directions
@@ -206,7 +142,7 @@ class Recver(object):
                 try:
                     data = self.d.read(4096)
                 except (socket.error, OSError), e:
-                    if e.errno == EAGAIN:
+                    if e.errno == vanilla.poll.EAGAIN:
                         break
 
                     # TODO: investigate handling non-blocking ssl correctly
@@ -229,7 +165,7 @@ class Recver(object):
                     try:
                         n = self.d.write(data)
                     except (socket.error, OSError), e:
-                        if e.errno == EAGAIN:
+                        if e.errno == vanilla.poll.EAGAIN:
                             writer.wait().clear()
                             continue
                         self.writer.close()
@@ -239,10 +175,10 @@ class Recver(object):
                     data = data[n:]
 
         for fileno, event in self.events:
-            if event & POLLIN:
+            if event & vanilla.poll.POLLIN:
                 reader.trigger()
 
-            elif event & POLLOUT:
+            elif event & vanilla.poll.POLLOUT:
                 writer.trigger()
 
             else:

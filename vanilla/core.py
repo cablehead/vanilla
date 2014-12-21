@@ -22,7 +22,7 @@ import os
 from greenlet import getcurrent
 from greenlet import greenlet
 
-import vanilla.io
+import vanilla.poll
 
 
 __version__ = '0.0.5'
@@ -766,7 +766,7 @@ class Hub(object):
 
         self.registered = {}
 
-        self.poll = vanilla.io.Poll()
+        self.poll = vanilla.poll.Poll()
 
         self.signal = Signal(self)
         self.tcp = TCP(self)
@@ -1033,25 +1033,33 @@ class Hub(object):
         self.loop.switch()
 
     def register(self, fd, *masks):
-        sender, recver = self.pipe()
-        self.registered[fd] = (sender, masks)
+        ret = []
+        self.registered[fd] = {}
+        for mask in masks:
+            sender, recver = self.pipe()
+            self.registered[fd][mask] = sender
+            ret.append(recver)
         self.poll.register(fd, *masks)
-        return recver
+        if len(ret) == 1:
+            return ret[0]
+        return ret
 
     def unregister(self, fd):
         if fd in self.registered:
-            sender, masks = self.registered.pop(fd)
+            masks = self.registered.pop(fd)
             try:
-                self.poll.unregister(fd, *masks)
+                self.poll.unregister(fd, *(masks.keys()))
             except:
                 pass
-            sender.close()
+            for mask in masks:
+                masks[mask].close()
 
     def stop(self):
         self.sleep(1)
 
-        for sender, masks in self.registered.values():
-            sender.send(Stop('stop'))
+        for masks in self.registered.values():
+            for sender in masks.values():
+                sender.send(Stop('stop'))
 
         while self.scheduled:
             task, a = self.scheduled.pop()
@@ -1135,12 +1143,14 @@ class Hub(object):
                 self.run_task(task, *a)
 
             else:
-                for fd, event in events:
+                for fd, mask in events:
                     if fd in self.registered:
-                        sender, _ = self.registered[fd]
-                        # TODO: rethink this
-                        if sender.ready:
-                            sender.send((fd, event))
+                        masks = self.registered[fd]
+                        if mask == vanilla.poll.POLLERR:
+                            for sender in masks.values():
+                                sender.close()
+                        else:
+                            masks[mask].send(True)
 
 
 class Signal(object):
