@@ -1,10 +1,9 @@
 import socket
 import fcntl
-import ssl
 import os
 
+import vanilla.exception
 import vanilla.poll
-import vanilla.core
 
 
 class __plugin__(object):
@@ -84,7 +83,7 @@ class Sender(object):
                 if e.errno == vanilla.poll.EAGAIN:
                     self.pulse.recv()
                     continue
-                raise vanilla.core.Closed()
+                raise vanilla.exception.Closed()
             if n == len(data):
                 break
             data = data[n:]
