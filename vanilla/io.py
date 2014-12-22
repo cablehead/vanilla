@@ -74,21 +74,21 @@ class Sender(object):
                     self.pulse.send(True)
             self.close()
 
-    def send(self, data, timeout=-1):
-        # TODO: serialize with a semaphore
-        # TODO: test more than one write at the same time
-        # TODO: test timeout
-        while True:
-            try:
-                n = self.fd.write(data)
-            except (socket.error, OSError), e:
-                if e.errno == vanilla.poll.EAGAIN:
-                    self.pulse.recv()
-                    continue
-                raise vanilla.exception.Closed()
-            if n == len(data):
-                break
-            data = data[n:]
+        @hub.serialize
+        def send(data, timeout=-1):
+            # TODO: test timeout
+            while True:
+                try:
+                    n = self.fd.write(data)
+                except (socket.error, OSError), e:
+                    if e.errno == vanilla.poll.EAGAIN:
+                        self.pulse.recv()
+                        continue
+                    raise vanilla.exception.Closed()
+                if n == len(data):
+                    break
+                data = data[n:]
+        self.send = send
 
     def connect(self, recver):
         recver.consume(self.send)

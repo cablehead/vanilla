@@ -31,6 +31,26 @@ class TestIO(object):
             got += recver.recv()
         assert want == got
 
+    def test_write_serialize(self):
+        h = vanilla.Hub()
+        sender, recver = h.io.pipe()
+
+        want1 = 'a' * 1024 * 1024
+        want2 = 'b' * 1024 * 1024
+
+        @h.spawn
+        def _():
+            sender.send(want1)
+
+        @h.spawn
+        def _():
+            sender.send(want2)
+
+        got = ''
+        while len(got) < (len(want1) + len(want2)):
+            got += recver.recv()
+        assert got == want1+want2
+
     def test_write_close(self):
         h = vanilla.Hub()
         sender, recver = h.io.pipe()
