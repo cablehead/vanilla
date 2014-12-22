@@ -68,10 +68,14 @@ class Sender(object):
 
         @hub.spawn
         def pulse():
-            events = hub.register(fd.fileno, vanilla.poll.POLLOUT)
-            for event in events:
-                if self.pulse.sender.ready:
-                    self.pulse.send(True)
+            try:
+                events = hub.register(fd.fileno, vanilla.poll.POLLOUT)
+            except (IOError, OSError):
+                pass
+            else:
+                for event in events:
+                    if self.pulse.sender.ready:
+                        self.pulse.send(True)
             self.close()
 
         @hub.serialize
@@ -103,7 +107,11 @@ def Recver(hub, fd):
 
     @hub.spawn
     def _():
-        events = hub.register(fd.fileno, vanilla.poll.POLLIN)
+        try:
+            events = hub.register(fd.fileno, vanilla.poll.POLLIN)
+        except (IOError, OSError):
+            sender.close()
+            return
         for event in events:
             while True:
                 try:
