@@ -234,6 +234,24 @@ class Hub(object):
             recver = recver.pipe(self.queue(size))
         return vanilla.message.Pair(sender, recver.pipe(self.dealer()))
 
+    def serialize(self, f):
+        """
+        Decorator to serialize access to a callable *f*
+        """
+        s = self.router()
+
+        @self.spawn
+        def _():
+            for f, a, kw, r in s.recver:
+                r.send(f(*a, **kw))
+
+        def _(*a, **kw):
+            r = self.pipe()
+            s.send((f, a, kw, r))
+            return r.recv()
+
+        return _
+
     def broadcast(self):
         return vanilla.message.Broadcast(self)
 

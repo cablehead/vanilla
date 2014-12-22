@@ -5,6 +5,11 @@ import pytest
 import vanilla
 
 
+# TODO: remove
+import logging
+logging.basicConfig()
+
+
 @pytest.mark.parametrize('primitive, a', [
     ('pipe', ()),
     ('dealer', ()),
@@ -675,3 +680,19 @@ class TestValue(object):
         h = vanilla.Hub()
         v = h.value()
         pytest.raises(vanilla.Timeout, v.recv, timeout=0)
+
+
+def test_serialize():
+    h = vanilla.Hub()
+
+    out = h.pipe()
+
+    @h.serialize
+    def go(i):
+        h.sleep(40-(10*i))
+        out.send(i)
+
+    for i in xrange(3):
+        h.spawn(go, i)
+
+    assert list(out.recver) == [0, 1, 2]
