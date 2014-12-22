@@ -110,6 +110,12 @@ class Recver(object):
                     except (socket.error, OSError), e:
                         if e.errno == vanilla.poll.EAGAIN:
                             break
+                        """
+                        # TODO: investigate handling non-blocking ssl correctly
+                        # perhaps SSL_set_fd() ??
+                        if isinstance(e, ssl.SSLError):
+                            break
+                        """
                         raise
 
                     if not data:
@@ -127,80 +133,6 @@ class Recver(object):
         # TODO: unregister
 
     """
-    def _init__(self, hub, d):
-        self.closed = False
-
-        self.timeout = -1
-        self.line_break = '\n'
-
-        self.events = self.hub.register(
-            self.fileno, vanilla.poll.POLLIN, vanilla.poll.POLLOUT)
-
-        # TODO: if this is a read or write only file, don't set up both
-        # directions
-        self.read_buffer = ''
-        self.reader = self.hub.pipe()
-        self.writer = self.hub.pipe()
-
-        self.hub.spawn(self.main)
-
-    def main(self):
-        @self.hub.trigger
-        def reader():
-            while True:
-                try:
-                    data = self.d.read(4096)
-                except (socket.error, OSError), e:
-                    if e.errno == vanilla.poll.EAGAIN:
-                        break
-
-                    # TODO: investigate handling non-blocking ssl correctly
-                    # perhaps SSL_set_fd() ??
-                    if isinstance(e, ssl.SSLError):
-                        break
-                    self.reader.close()
-                    return
-                if not data:
-                    self.reader.close()
-                    return
-                self.reader.send(data)
-
-        writer = self.hub.gate()
-
-        @self.hub.spawn
-        def _():
-            for data in self.writer.recver:
-                while True:
-                    try:
-                        n = self.d.write(data)
-                    except (socket.error, OSError), e:
-                        if e.errno == vanilla.poll.EAGAIN:
-                            writer.wait().clear()
-                            continue
-                        self.writer.close()
-                        return
-                    if n == len(data):
-                        break
-                    data = data[n:]
-
-        for fileno, event in self.events:
-            if event & vanilla.poll.POLLIN:
-                reader.trigger()
-
-            elif event & vanilla.poll.POLLOUT:
-                writer.trigger()
-
-            else:
-                print "YARG", self.humanize_mask(event)
-
-        self.close()
-
-    def read(self):
-        return self.reader.recv(timeout=self.timeout)
-
-    def write(self, data):
-        return self.writer.send(data)
-
     # TODO: experimenting with this API
     def pipe(self, sender):
         return self.reader.pipe(sender)
@@ -241,14 +173,4 @@ class Recver(object):
 
     def read_line(self):
         return self.read_partition(self.line_break)
-
-    def close(self):
-        self.closed = True
-        self.reader.close()
-        self.writer.close()
-        self.hub.unregister(self.fileno)
-        try:
-            self.d.close()
-        except:
-            pass
     """
