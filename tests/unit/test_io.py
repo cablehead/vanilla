@@ -52,3 +52,14 @@ class TestIO(object):
         recver.close()
         pytest.raises(vanilla.Closed, sender.send, '123')
         pytest.raises(vanilla.Closed, recver.recv)
+
+    def test_api(self):
+        h = vanilla.Hub()
+        p1 = h.io.pipe()
+        p2 = h.io.pipe()
+
+        p1.pipe(p2)
+        p2.map(lambda x: int(x)*2)
+
+        p1.send('3')
+        assert p2.recv() == 6

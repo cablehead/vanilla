@@ -3,6 +3,7 @@ import fcntl
 import os
 
 import vanilla.exception
+import vanilla.message
 import vanilla.poll
 
 
@@ -14,7 +15,7 @@ class __plugin__(object):
         r, w = os.pipe()
         recver = Recver(self.hub, FD_from_fileno(r))
         sender = Sender(self.hub, FD_from_fileno(w))
-        return sender, recver
+        return vanilla.message.Pair(sender, recver)
 
 
 def unblock(fileno):
@@ -73,9 +74,10 @@ class Sender(object):
                     self.pulse.send(True)
             self.close()
 
-    def send(self, data):
+    def send(self, data, timeout=-1):
         # TODO: serialize with a semaphore
         # TODO: test more than one write at the same time
+        # TODO: test timeout
         while True:
             try:
                 n = self.fd.write(data)
@@ -88,58 +90,53 @@ class Sender(object):
                 break
             data = data[n:]
 
+    def connect(self, recver):
+        recver.consume(self.send)
+
     def close(self):
         self.fd.close()
         # TODO: unregister
 
 
-class Recver(object):
-    def __init__(self, hub, fd):
-        self.hub = hub
-        self.fd = fd
+def Recver(hub, fd):
+    sender, recver = hub.pipe()
 
-        self.p = hub.pipe()
+    @hub.spawn
+    def _():
+        events = hub.register(fd.fileno, vanilla.poll.POLLIN)
+        for event in events:
+            while True:
+                try:
+                    data = fd.read(16384)
+                except (socket.error, OSError), e:
+                    if e.errno == vanilla.poll.EAGAIN:
+                        break
+                    """
+                    # TODO: investigate handling non-blocking ssl correctly
+                    # perhaps SSL_set_fd() ??
+                    if isinstance(e, ssl.SSLError):
+                        break
+                    """
+                    raise
 
-        @hub.spawn
-        def _():
-            events = hub.register(fd.fileno, vanilla.poll.POLLIN)
-            for event in events:
-                while True:
-                    try:
-                        data = self.fd.read(16384)
-                    except (socket.error, OSError), e:
-                        if e.errno == vanilla.poll.EAGAIN:
-                            break
-                        """
-                        # TODO: investigate handling non-blocking ssl correctly
-                        # perhaps SSL_set_fd() ??
-                        if isinstance(e, ssl.SSLError):
-                            break
-                        """
-                        raise
+                if not data:
+                    sender.close()
+                    return
 
-                    if not data:
-                        self.p.close()
-                        return
+                sender.send(data)
 
-                    self.p.send(data)
+    # override the Recver's close method to also close the descriptor
+    _close = recver.close
 
-    def recv(self, timeout=-1):
-        return self.p.recv(timeout=timeout)
-
-    def close(self):
-        self.fd.close()
-        self.p.close()
+    def close():
+        fd.close()
         # TODO: unregister
+        _close()
+
+    recver.close = close
+    return recver
 
     """
-    # TODO: experimenting with this API
-    def pipe(self, sender):
-        return self.reader.pipe(sender)
-
-    def connect(self, recver):
-        return self.writer.sender.connect(recver)
-
     def read_bytes(self, n):
         if n == 0:
             return ''
