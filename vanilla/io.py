@@ -37,7 +37,7 @@ class FD_from_fileno(object):
 
     def close(self):
         try:
-            os.close(self.fd)
+            os.close(self.fileno)
         except OSError:
             pass
 
@@ -89,7 +89,7 @@ class Sender(object):
             data = data[n:]
 
     def close(self):
-        os.close(self.fd.fileno)
+        self.fd.close()
         # TODO: unregister
 
 
@@ -128,7 +128,7 @@ class Recver(object):
         return self.p.recv(timeout=timeout)
 
     def close(self):
-        os.close(self.fd.fileno)
+        self.fd.close()
         self.p.close()
         # TODO: unregister
 
