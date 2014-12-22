@@ -243,7 +243,10 @@ class Hub(object):
         @self.spawn
         def _():
             for f, a, kw, r in s.recver:
-                r.send(f(*a, **kw))
+                try:
+                    r.send(f(*a, **kw))
+                except Exception, e:
+                    r.send(e)
 
         def _(*a, **kw):
             r = self.pipe()

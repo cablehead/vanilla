@@ -682,17 +682,27 @@ class TestValue(object):
         pytest.raises(vanilla.Timeout, v.recv, timeout=0)
 
 
-def test_serialize():
-    h = vanilla.Hub()
+class TestSerialize(object):
+    def test_serialize(self):
+        h = vanilla.Hub()
 
-    out = h.pipe()
+        out = h.pipe()
 
-    @h.serialize
-    def go(i):
-        h.sleep(40-(10*i))
-        out.send(i)
+        @h.serialize
+        def go(i):
+            h.sleep(40-(10*i))
+            out.send(i)
 
-    for i in xrange(3):
-        h.spawn(go, i)
+        for i in xrange(3):
+            h.spawn(go, i)
 
-    assert list(out.recver) == [0, 1, 2]
+        assert list(out.recver) == [0, 1, 2]
+
+    def test_exception(self):
+        h = vanilla.Hub()
+
+        @h.serialize
+        def go():
+            raise AssertionError('foo')
+
+        pytest.raises(AssertionError, go)
