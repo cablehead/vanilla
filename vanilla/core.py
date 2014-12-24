@@ -409,9 +409,10 @@ class Hub(object):
     def stop(self):
         self.sleep(1)
 
-        for masks in self.registered.values():
-            for sender in masks.values():
-                sender.send(vanilla.exception.Stop('stop'))
+        for fd, masks in self.registered.items():
+            for mask, sender in masks.items():
+                if not sender.halted:
+                    sender.send(vanilla.exception.Stop('stop'))
 
         while self.scheduled:
             task, a = self.scheduled.pop()

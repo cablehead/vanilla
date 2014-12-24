@@ -186,9 +186,9 @@ class End(object):
         return ret
 
     def close(self):
+        self.middle.closed = True
         if self.other is not None and bool(self.other.current):
             self.hub.throw_to(self.other.current, vanilla.exception.Closed)
-        self.middle.closed = True
 
 
 class Sender(End):

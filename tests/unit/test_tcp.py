@@ -4,13 +4,17 @@ import vanilla
 class TestTCP(object):
     def test_tcp(self):
         h = vanilla.Hub()
+        server = h.tcp.listen()
 
-        @h.tcp.listen()
-        def server(conn):
-            conn.write(' '.join([conn.read()]*2))
+        @h.spawn
+        def _():
+            conn = server.recv()
+            message = conn.recv()
+            conn.send('Echo: ' + message)
 
         client = h.tcp.connect(server.port)
-        client.write('Toby')
-        assert client.read() == 'Toby Toby'
+        client.send('Toby')
+        assert client.recv() == 'Echo: Toby'
 
         h.stop()
+        assert not h.registered

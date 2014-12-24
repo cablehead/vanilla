@@ -13,8 +13,14 @@ class __plugin__(object):
 
     def pipe(self):
         r, w = os.pipe()
-        recver = Recver(self.hub, FD_from_fileno(r))
-        sender = Sender(self.hub, FD_from_fileno(w))
+        recver = Recver(FD_from_fileno_in(self.hub, r))
+        sender = Sender(FD_from_fileno_out(self.hub, w))
+        return vanilla.message.Pair(sender, recver)
+
+    def socket(self, conn):
+        fd = FD_from_socket(self.hub, conn)
+        recver = vanilla.io.Recver(fd)
+        sender = vanilla.io.Sender(fd)
         return vanilla.message.Pair(sender, recver)
 
 
@@ -25,13 +31,29 @@ def unblock(fileno):
     return fileno
 
 
-class FD_from_fileno(object):
-    def __init__(self, fileno):
+class FD_from_fileno_in(object):
+    def __init__(self, hub, fileno):
+        self.hub = hub
         self.fileno = fileno
         unblock(self.fileno)
+        self.pollin = hub.register(self.fileno, vanilla.poll.POLLIN)
 
     def read(self, n):
         return os.read(self.fileno, n)
+
+    def close(self):
+        try:
+            os.close(self.fileno)
+        except OSError:
+            pass
+
+
+class FD_from_fileno_out(object):
+    def __init__(self, hub, fileno):
+        self.hub = hub
+        self.fileno = fileno
+        unblock(self.fileno)
+        self.pollout = hub.register(self.fileno, vanilla.poll.POLLOUT)
 
     def write(self, data):
         return os.write(self.fileno, data)
@@ -44,10 +66,13 @@ class FD_from_fileno(object):
 
 
 class FD_from_socket(object):
-    def __init__(self, conn):
+    def __init__(self, hub, conn):
+        self.hub = hub
         self.conn = conn
         self.fileno = self.conn.fileno()
         unblock(self.fileno)
+        self.pollin, self.pollout = hub.register(
+            self.fileno, vanilla.poll.POLLIN, vanilla.poll.POLLOUT)
 
     def read(self, n):
         return self.conn.recv(n)
@@ -60,25 +85,20 @@ class FD_from_socket(object):
 
 
 class Sender(object):
-    def __init__(self, hub, fd):
-        self.hub = hub
+    def __init__(self, fd):
         self.fd = fd
+        self.hub = fd.hub
 
-        self.pulse = hub.pipe()
+        self.pulse = self.hub.pipe()
 
-        @hub.spawn
+        @self.hub.spawn
         def pulse():
-            try:
-                events = hub.register(fd.fileno, vanilla.poll.POLLOUT)
-            except (IOError, OSError):
-                pass
-            else:
-                for event in events:
-                    if self.pulse.sender.ready:
-                        self.pulse.send(True)
+            for _ in fd.pollout:
+                if self.pulse.sender.ready:
+                    self.pulse.send(True)
             self.close()
 
-        @hub.serialize
+        @self.hub.serialize
         def send(data, timeout=-1):
             # TODO: test timeout
             while True:
@@ -103,7 +123,8 @@ class Sender(object):
         self.hub.unregister(self.fd.fileno)
 
 
-def Recver(hub, fd):
+def Recver(fd):
+    hub = fd.hub
     sender, recver = hub.pipe()
 
     # override the Recver's close method to also close the descriptor
@@ -118,31 +139,26 @@ def Recver(hub, fd):
 
     @hub.spawn
     def _():
-        try:
-            events = hub.register(fd.fileno, vanilla.poll.POLLIN)
-        except (IOError, OSError):
-            pass
-        else:
-            for event in events:
-                while True:
-                    try:
-                        data = fd.read(16384)
-                    except (socket.error, OSError), e:
-                        if e.errno == vanilla.poll.EAGAIN:
-                            break
-                        """
-                        # TODO: investigate handling non-blocking ssl correctly
-                        # perhaps SSL_set_fd() ??
-                        if isinstance(e, ssl.SSLError):
-                            break
-                        """
-                        raise
+        for _ in fd.pollin:
+            while True:
+                try:
+                    data = fd.read(16384)
+                except (socket.error, OSError), e:
+                    if e.errno == vanilla.poll.EAGAIN:
+                        break
+                    """
+                    # TODO: investigate handling non-blocking ssl correctly
+                    # perhaps SSL_set_fd() ??
+                    if isinstance(e, ssl.SSLError):
+                        break
+                    """
+                    raise
 
-                    if not data:
-                        recver.close()
-                        return
+                if not data:
+                    recver.close()
+                    return
 
-                    sender.send(data)
+                sender.send(data)
 
         recver.close()
 
