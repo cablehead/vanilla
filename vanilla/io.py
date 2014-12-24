@@ -88,6 +88,7 @@ class Sender(object):
                     if e.errno == vanilla.poll.EAGAIN:
                         self.pulse.recv()
                         continue
+                    self.close()
                     raise vanilla.exception.Closed()
                 if n == len(data):
                     break
@@ -99,49 +100,52 @@ class Sender(object):
 
     def close(self):
         self.fd.close()
-        # TODO: unregister
+        self.hub.unregister(self.fd.fileno)
 
 
 def Recver(hub, fd):
     sender, recver = hub.pipe()
+
+    # override the Recver's close method to also close the descriptor
+    _close = recver.close
+
+    def close():
+        _close()
+        fd.close()
+        hub.unregister(fd.fileno)
+
+    recver.close = close
 
     @hub.spawn
     def _():
         try:
             events = hub.register(fd.fileno, vanilla.poll.POLLIN)
         except (IOError, OSError):
-            sender.close()
-            return
-        for event in events:
-            while True:
-                try:
-                    data = fd.read(16384)
-                except (socket.error, OSError), e:
-                    if e.errno == vanilla.poll.EAGAIN:
-                        break
-                    """
-                    # TODO: investigate handling non-blocking ssl correctly
-                    # perhaps SSL_set_fd() ??
-                    if isinstance(e, ssl.SSLError):
-                        break
-                    """
-                    raise
+            pass
+        else:
+            for event in events:
+                while True:
+                    try:
+                        data = fd.read(16384)
+                    except (socket.error, OSError), e:
+                        if e.errno == vanilla.poll.EAGAIN:
+                            break
+                        """
+                        # TODO: investigate handling non-blocking ssl correctly
+                        # perhaps SSL_set_fd() ??
+                        if isinstance(e, ssl.SSLError):
+                            break
+                        """
+                        raise
 
-                if not data:
-                    sender.close()
-                    return
+                    if not data:
+                        recver.close()
+                        return
 
-                sender.send(data)
+                    sender.send(data)
 
-    # override the Recver's close method to also close the descriptor
-    _close = recver.close
+        recver.close()
 
-    def close():
-        fd.close()
-        # TODO: unregister
-        _close()
-
-    recver.close = close
     return recver
 
     """

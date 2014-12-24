@@ -15,6 +15,7 @@ class TestIO(object):
         pytest.raises(vanilla.Timeout, recver.recv, timeout=0)
         sender.send('123')
         assert recver.recv() == '123'
+        h.stop()
 
     def test_write_eagain(self):
         h = vanilla.Hub()
@@ -64,7 +65,8 @@ class TestIO(object):
 
         assert recver.recv() == '123'
         assert recver.recv() == '456'
-        pytest.raises(vanilla.Closed, recver.recv)
+        pytest.raises(vanilla.Halt, recver.recv)
+        assert not h.registered
 
     def test_read_close(self):
         h = vanilla.Hub()
@@ -72,6 +74,7 @@ class TestIO(object):
         recver.close()
         pytest.raises(vanilla.Closed, sender.send, '123')
         pytest.raises(vanilla.Closed, recver.recv)
+        assert not h.registered
 
     def test_api(self):
         h = vanilla.Hub()
