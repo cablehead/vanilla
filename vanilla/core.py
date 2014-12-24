@@ -9,7 +9,6 @@ import logging
 import urllib
 import struct
 import signal
-import socket
 import base64
 import heapq
 import uuid
@@ -100,13 +99,7 @@ class Hub(object):
         self.stopped = self.value()
 
         self.registered = {}
-
         self.poll = vanilla.poll.Poll()
-
-        self.signal = Signal(self)
-        self.tcp = TCP(self)
-        self.http = HTTP(self)
-
         self.loop = greenlet(self.main)
 
     def __getattr__(self, name):
@@ -512,52 +505,6 @@ class Hub(object):
                             masks[mask].send(True)
 
 
-class Signal(object):
-    def __init__(self, hub):
-        self.hub = hub
-        self.fd_r = None
-        self.fd_w = None
-        self.mapper = {}
-
-    def start(self):
-        pipe_r, pipe_w = C.pipe()
-        self.fd_r = self.hub.poll.fileno(pipe_r)
-        self.fd_w = self.hub.poll.fileno(pipe_w)
-
-        @self.hub.spawn
-        def _():
-            while True:
-                try:
-                    data = self.fd_r.read()
-                # TODO: cleanup shutdown
-                except vanilla.exception.Halt:
-                    break
-                # TODO: add protocol to read byte at a time
-                assert len(data) == 1
-                sig = ord(data)
-                self.mapper[sig].send(sig)
-
-    def capture(self, sig):
-        if not self.fd_r:
-            self.start()
-
-        def handler(sig, frame):
-            self.fd_w.write(chr(sig))
-
-        signal.signal(sig, handler)
-
-    def subscribe(self, *signals):
-        router = self.hub.router()
-
-        for sig in signals:
-            if sig not in self.mapper:
-                self.capture(sig)
-                self.mapper[sig] = self.hub.broadcast()
-            self.mapper[sig].subscribe().pipe(router)
-
-        return router.recver
-
-
 class protocols(object):
     @staticmethod
     def length_prefix(conn):
@@ -590,51 +537,6 @@ class protocols(object):
         conn.writer = h.pipe().map(encode).pipe(conn.writer)
         conn.reader = conn.reader.map(decode)
         return conn
-
-
-class TCP(object):
-    def __init__(self, hub):
-        self.hub = hub
-
-    def listen(self, port=0, host='127.0.0.1', serve=None):
-        if serve:
-            return TCPListener(self.hub, host, port, serve)
-        return functools.partial(TCPListener, self.hub, host, port)
-
-    def connect(self, port, host='127.0.0.1'):
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # TODO: this shouldn't block on the connect
-        conn.connect((host, port))
-        return self.hub.poll.socket(conn)
-
-
-class TCPListener(object):
-    def __init__(self, hub, host, port, serve):
-        self.hub = hub
-
-        self.sock = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
-        s.listen(socket.SOMAXCONN)
-        s.setblocking(0)
-
-        self.port = s.getsockname()[1]
-        self.serve = serve
-
-        hub.spawn(self.accept)
-
-    def accept(self):
-        ready = self.hub.register(self.sock.fileno(), C.POLLIN)
-        while True:
-            try:
-                ready.recv()
-            except vanilla.exception.Halt:
-                self.hub.unregister(self.sock.fileno())
-                self.sock.close()
-                return
-            conn, host = self.sock.accept()
-            conn = self.hub.poll.socket(conn)
-            self.hub.spawn(self.serve, conn)
 
 
 # HTTP #####################################################################
