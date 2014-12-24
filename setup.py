@@ -7,7 +7,7 @@ from setuptools import find_packages
 
 
 metadata = dict(
-    re.findall("__([a-z]+)__ = '([^']+)'", open('vanilla/core.py').read()))
+    re.findall("__([a-z]+)__ = '([^']+)'", open('vanilla/meta.py').read()))
 
 requirements = [
     x.strip() for x

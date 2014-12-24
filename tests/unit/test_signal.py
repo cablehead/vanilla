@@ -1,4 +1,5 @@
 import signal
+import os
 
 import pytest
 
@@ -30,3 +31,8 @@ class TestSignal(object):
         # registered file descriptor
         s2.close()
         assert not h.registered
+
+    def test_stop_on_term(self):
+        h = vanilla.Hub()
+        h.spawn_later(10, os.kill, os.getpid(), signal.SIGINT)
+        h.stop_on_term()
