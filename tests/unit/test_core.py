@@ -1,5 +1,6 @@
 import time
 
+import vanilla
 import vanilla.core
 
 
@@ -43,7 +44,7 @@ def test_Scheduler():
 
 class TestHub(object):
     def test_spawn(self):
-        h = vanilla.core.Hub()
+        h = vanilla.Hub()
         a = []
 
         h.spawn_later(10, lambda: a.append(1))
@@ -56,7 +57,7 @@ class TestHub(object):
         assert a == [2, 1]
 
     def test_exception(self):
-        h = vanilla.core.Hub()
+        h = vanilla.Hub()
 
         def raiser():
             raise Exception()
@@ -69,7 +70,7 @@ class TestHub(object):
         assert a == [2]
 
     def test_stop(self):
-        h = vanilla.core.Hub()
+        h = vanilla.Hub()
 
         @h.spawn
         def _():
