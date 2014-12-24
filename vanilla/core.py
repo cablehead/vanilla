@@ -400,8 +400,7 @@ class Hub(object):
 
         for fd, masks in self.registered.items():
             for mask, sender in masks.items():
-                if not sender.halted:
-                    sender.send(vanilla.exception.Stop('stop'))
+                sender.stop()
 
         while self.scheduled:
             task, a = self.scheduled.pop()

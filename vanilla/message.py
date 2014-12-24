@@ -185,10 +185,13 @@ class End(object):
             self.unselect()
         return ret
 
-    def close(self):
+    def close(self, exception=vanilla.exception.Closed):
         self.middle.closed = True
         if self.other is not None and bool(self.other.current):
-            self.hub.throw_to(self.other.current, vanilla.exception.Closed)
+            self.hub.throw_to(self.other.current, exception)
+
+    def stop(self):
+        self.close(exception=vanilla.exception.Stop)
 
 
 class Sender(End):
