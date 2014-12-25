@@ -76,6 +76,9 @@ class Pair(Pair):
         # TODO: shouldn't this return a new Pair?
         return self.sender.connect(recver)
 
+    def onclose(self, f, *a, **kw):
+        self.recver.onclose(f, *a, **kw)
+
     def close(self):
         """
         Closes both ends of this Pair
@@ -113,7 +116,7 @@ class Pipe(object):
     """
     __slots__ = [
         'hub', 'recver', 'recver_current', 'sender', 'sender_current',
-        'closed']
+        'closed', 'closers']
 
     def __new__(cls, hub):
         self = super(Pipe, cls).__new__(cls)
@@ -185,10 +188,24 @@ class End(object):
             self.unselect()
         return ret
 
+    def onclose(self, f, *a, **kw):
+        if not hasattr(self.middle, 'closers'):
+            self.middle.closers = [(f, a, kw)]
+        else:
+            self.middle.closers.append((f, a, kw))
+
     def close(self, exception=vanilla.exception.Closed):
+        closers = getattr(self.middle, 'closers', [])
+        if closers:
+            del self.middle.closers
+
         self.middle.closed = True
+
         if self.other is not None and bool(self.other.current):
             self.hub.throw_to(self.other.current, exception)
+
+        for f, a, kw in closers:
+            f(*a, **kw)
 
     def stop(self):
         self.close(exception=vanilla.exception.Stop)
