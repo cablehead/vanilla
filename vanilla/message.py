@@ -624,23 +624,33 @@ class Broadcast(object):
 
 
 class Gate(object):
-    def __init__(self, hub, state=False):
-        self.hub = hub
-        self.pipe = hub.pipe()
-        self.state = state
+    class Sender(Sender):
+        def send(self, item, timeout=-1):
+            self.other.state = True
+            if self.ready:
+                super(Gate.Sender, self).send(True)
 
-    def trigger(self):
-        self.state = True
-        if self.pipe.sender.ready:
-            self.pipe.send(True)
+        def connect(self, recver):
+            recver.consume(self.send)
+            return self.other
 
-    def wait(self, timeout=-1):
-        if not self.state:
-            self.pipe.recv(timeout=timeout)
-        return self
+    class Recver(Recver):
+        def recv(self, timeout=-1):
+            if not self.state:
+                super(Gate.Recver, self).recv(timeout=timeout)
 
-    def clear(self):
-        self.state = False
+        def clear(self):
+            self.state = False
+            return self
+
+    def __new__(cls, hub, state=False):
+        sender, recver = hub.pipe()
+        sender.__class__ = Gate.Sender
+        recver.__class__ = Gate.Recver
+        recver.state = state
+        ret = Pair(sender, recver)
+        ret.clear = recver.clear
+        return ret
 
 
 class Value(object):

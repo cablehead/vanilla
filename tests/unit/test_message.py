@@ -654,14 +654,25 @@ class TestGate(object):
 
         g = h.gate()
 
-        pytest.raises(vanilla.Timeout, g.wait, 10)
+        pytest.raises(vanilla.Timeout, g.recv, 10)
 
-        h.spawn_later(10, g.trigger)
-        g.wait()
-        g.wait()
+        h.spawn_later(10, g.send, True)
+        g.recv()
+        g.recv()
 
         g.clear()
-        pytest.raises(vanilla.Timeout, g.wait, 10)
+        pytest.raises(vanilla.Timeout, g.recv, 10)
+
+        g.send(True)
+        g.recv()
+
+    def test_connect(self):
+        h = vanilla.Hub()
+        p = h.pipe()
+        g = p.pipe(h.gate())
+        pytest.raises(vanilla.Timeout, g.recv, 10)
+        p.send(True)
+        g.recv()
 
 
 class TestValue(object):

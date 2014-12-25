@@ -92,14 +92,8 @@ class Sender(object):
         self.fd = fd
         self.hub = fd.hub
 
-        self.pulse = self.hub.pipe()
-
-        @self.hub.spawn
-        def pulse():
-            for _ in fd.pollout:
-                if self.pulse.sender.ready:
-                    self.pulse.send(True)
-            self.close()
+        self.fd.pollout.onclose(self.close)
+        self.gate = self.fd.pollout.pipe(self.hub.gate())
 
         @self.hub.serialize
         def send(data, timeout=-1):
@@ -109,7 +103,7 @@ class Sender(object):
                     n = self.fd.write(data)
                 except (socket.error, OSError), e:
                     if e.errno == vanilla.poll.EAGAIN:
-                        self.pulse.recv()
+                        self.gate.clear().recv()
                         continue
                     self.close()
                     raise vanilla.exception.Closed()
