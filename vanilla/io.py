@@ -46,6 +46,7 @@ class FD_from_fileno_in(object):
             os.close(self.fileno)
         except OSError:
             pass
+        self.hub.unregister(self.fileno)
 
 
 class FD_from_fileno_out(object):
@@ -63,6 +64,7 @@ class FD_from_fileno_out(object):
             os.close(self.fileno)
         except OSError:
             pass
+        self.hub.unregister(self.fileno)
 
 
 class FD_from_socket(object):
@@ -82,6 +84,7 @@ class FD_from_socket(object):
 
     def close(self):
         self.conn.close()
+        self.hub.unregister(self.fileno)
 
 
 class Sender(object):
@@ -120,22 +123,13 @@ class Sender(object):
 
     def close(self):
         self.fd.close()
-        self.hub.unregister(self.fd.fileno)
 
 
 def Recver(fd):
     hub = fd.hub
     sender, recver = hub.pipe()
 
-    # override the Recver's close method to also close the descriptor
-    _close = recver.close
-
-    def close():
-        _close()
-        fd.close()
-        hub.unregister(fd.fileno)
-
-    recver.close = close
+    recver.onclose(fd.close)
 
     @hub.spawn
     def _():
