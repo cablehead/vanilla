@@ -92,8 +92,9 @@ class Sender(object):
         self.fd = fd
         self.hub = fd.hub
 
+        self.gate = self.hub.router().pipe(self.hub.state())
+        self.fd.pollout.pipe(self.gate)
         self.fd.pollout.onclose(self.close)
-        self.gate = self.fd.pollout.pipe(self.hub.gate())
 
         @self.hub.serialize
         def send(data, timeout=-1):

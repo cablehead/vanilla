@@ -648,31 +648,35 @@ class TestBroadcast(object):
         assert check.recv() == ('s2', True)
 
 
-class TestGate(object):
-    def test_gate(self):
+class TestState(object):
+    def test_state(self):
         h = vanilla.Hub()
 
-        g = h.gate()
+        s = h.state()
+        pytest.raises(vanilla.Timeout, s.recv, 10)
 
-        pytest.raises(vanilla.Timeout, g.recv, 10)
+        h.spawn_later(10, s.send, 'Toby')
+        assert s.recv() == 'Toby'
+        assert s.recv() == 'Toby'
 
-        h.spawn_later(10, g.send, True)
-        g.recv()
-        g.recv()
+        s.clear()
+        pytest.raises(vanilla.Timeout, s.recv, 10)
+        s.send('Toby')
+        assert s.recv() == 'Toby'
 
-        g.clear()
-        pytest.raises(vanilla.Timeout, g.recv, 10)
-
-        g.send(True)
-        g.recv()
-
-    def test_connect(self):
+    def test_pipe(self):
         h = vanilla.Hub()
-        p = h.pipe()
-        g = p.pipe(h.gate())
-        pytest.raises(vanilla.Timeout, g.recv, 10)
-        p.send(True)
-        g.recv()
+        p = h.pipe() \
+            .map(lambda x: x*2) \
+            .pipe(h.state('Toby')) \
+            .map(lambda x: x+'.')
+
+        assert p.recv() == 'Toby.'
+
+        p.send('foo')
+        assert p.recv() == 'foofoo.'
+        assert p.recv() == 'foofoo.'
+        # TODO: should clear be able to be passed through map?
 
 
 class TestValue(object):

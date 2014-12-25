@@ -240,8 +240,8 @@ class Hub(object):
     def broadcast(self):
         return vanilla.message.Broadcast(self)
 
-    def gate(self, state=False):
-        return vanilla.message.Gate(self, state=state)
+    def state(self, state=vanilla.message.NoState):
+        return vanilla.message.State(self, state=state)
 
     def value(self):
         return vanilla.message.Value(self)

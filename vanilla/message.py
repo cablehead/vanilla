@@ -9,6 +9,10 @@ import vanilla.exception
 Pair = collections.namedtuple('Pair', ['sender', 'recver'])
 
 
+class NoState(object):
+    """a marker to indicate no state"""
+
+
 class Pair(Pair):
     """
     A Pair is a tuple of a `Sender`_ and a `Recver`_. The pair only share a
@@ -38,6 +42,10 @@ class Pair(Pair):
         either forever or until *timeout* milliseconds.
         """
         return self.sender.send(item, timeout=timeout)
+
+    def clear(self):
+        self.sender.clear()
+        return self
 
     def recv(self, timeout=-1):
         """
@@ -238,6 +246,9 @@ class Sender(End):
             return self.hub.throw_to(self.other.peak, item)
 
         return self.hub.switch_to(self.other.peak, self.other, item)
+
+    def clear(self):
+        self.send(NoState)
 
     def connect(self, recver):
         """
@@ -623,34 +634,35 @@ class Broadcast(object):
         recver.consume(self.send)
 
 
-class Gate(object):
-    class Sender(Sender):
-        def send(self, item, timeout=-1):
-            self.other.state = True
-            if self.ready:
-                super(Gate.Sender, self).send(True)
+def State(hub, state=NoState):
 
-        def connect(self, recver):
-            recver.consume(self.send)
-            return self.other
+    def main(recver, sender, state):
+        while True:
+            if state != NoState:
+                watch = [recver, sender]
+            else:
+                watch = [recver]
 
-    class Recver(Recver):
-        def recv(self, timeout=-1):
-            if not self.state:
-                super(Gate.Recver, self).recv(timeout=timeout)
+            ch, item = hub.select(watch)
+            if ch == recver:
+                state = item
+            else:
+                sender.send(state)
 
-        def clear(self):
-            self.state = False
-            return self
+    upstream = hub.pipe()
+    downstream = hub.pipe()
 
-    def __new__(cls, hub, state=False):
-        sender, recver = hub.pipe()
-        sender.__class__ = Gate.Sender
-        recver.__class__ = Gate.Recver
-        recver.state = state
-        ret = Pair(sender, recver)
-        ret.clear = recver.clear
-        return ret
+    # TODO: rethink this
+    old_connect = upstream.sender.connect
+
+    def connect(recver):
+        old_connect(recver)
+        return downstream.recver
+
+    upstream.sender.connect = connect
+
+    hub.spawn(main, upstream.recver, downstream.sender, state)
+    return Pair(upstream.sender, downstream.recver)
 
 
 class Value(object):
