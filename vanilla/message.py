@@ -663,27 +663,3 @@ def State(hub, state=NoState):
 
     hub.spawn(main, upstream.recver, downstream.sender, state)
     return Pair(upstream.sender, downstream.recver)
-
-
-class Value(object):
-    def __init__(self, hub):
-        self.hub = hub
-        self.waiters = []
-
-    def send(self, item):
-        self.value = item
-        for waiter in self.waiters:
-            self.hub.switch_to(waiter)
-
-    def recv(self, timeout=-1):
-        if not hasattr(self, 'value'):
-            self.waiters.append(getcurrent())
-            self.hub.pause(timeout=timeout)
-        return self.value
-
-    @property
-    def ready(self):
-        return hasattr(self, 'value')
-
-    def clear(self):
-        delattr(self, 'value')

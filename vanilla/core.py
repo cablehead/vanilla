@@ -85,7 +85,7 @@ class Hub(object):
         self.ready = collections.deque()
         self.scheduled = Scheduler()
 
-        self.stopped = self.value()
+        self.stopped = self.state()
 
         self.registered = {}
         self.poll = vanilla.poll.Poll()
@@ -308,8 +308,8 @@ class Hub(object):
                 # since we didn't timeout, remove ourselves from scheduled
                 self.scheduled.remove(item)
 
-        # TODO: rework Value's is set test to be more natural
-        if self.stopped.ready:
+        # TODO: rework State's is set test to be more natural
+        if self.stopped.recver.ready:
             raise vanilla.exception.Stop(
                 'Hub stopped while we were paused. There must be a deadlock.')
 

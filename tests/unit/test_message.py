@@ -679,32 +679,6 @@ class TestState(object):
         # TODO: should clear be able to be passed through map?
 
 
-class TestValue(object):
-    def test_value(self):
-        h = vanilla.Hub()
-
-        v = h.value()
-        check = h.pipe()
-
-        @h.spawn
-        def _():
-            while True:
-                check.send(v.recv())
-
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
-        v.send(1)
-        assert check.recv() == 1
-        assert check.recv() == 1
-
-        v.clear()
-        pytest.raises(vanilla.Timeout, check.recv, timeout=0)
-
-    def test_value_timeout(self):
-        h = vanilla.Hub()
-        v = h.value()
-        pytest.raises(vanilla.Timeout, v.recv, timeout=0)
-
-
 class TestSerialize(object):
     def test_serialize(self):
         h = vanilla.Hub()
