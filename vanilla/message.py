@@ -611,22 +611,26 @@ class Broadcast(object):
     def __init__(self, hub):
         self.hub = hub
         self.subscribers = []
+        self.emptiers = []
+
+    def onempty(self, f, *a, **kw):
+        self.emptiers.append((f, a, kw))
 
     def send(self, item):
-        to_remove = None
         for subscriber in self.subscribers:
-            try:
-                if subscriber.ready:
-                    subscriber.send(item)
-            except vanilla.exception.Halt:
-                to_remove = to_remove or []
-                to_remove.append(subscriber)
-        if to_remove:
-            self.subscribers = [
-                x for x in self.subscribers if x not in to_remove]
+            subscriber.send(item)
+
+    def unsubscribe(self, sender):
+        self.subscribers.remove(sender)
+        if not self.subscribers:
+            emptiers = self.emptiers
+            self.emptiers = []
+            for f, a, kw in emptiers:
+                f(*a, **kw)
 
     def subscribe(self):
         sender, recver = self.hub.pipe()
+        recver.onclose(self.unsubscribe, sender)
         self.subscribers.append(sender)
         return recver
 
@@ -635,7 +639,6 @@ class Broadcast(object):
 
 
 def State(hub, state=NoState):
-
     def main(recver, sender, state):
         while True:
             if state != NoState:

@@ -599,13 +599,14 @@ class TestBroadcast(object):
         b = h.broadcast()
         check = h.queue(10)
 
+        b.onempty(check.send, 'empty')
+
         def subscriber(s, name):
             for item in s:
                 check.send((name, item))
 
         s1 = b.subscribe()
         s2 = b.subscribe()
-
         h.spawn(subscriber, s1, 's1')
         h.spawn(subscriber, s2, 's2')
         h.sleep(1)
@@ -623,14 +624,15 @@ class TestBroadcast(object):
         assert check.recv() == ('s2', 3)
         pytest.raises(vanilla.Timeout, check.recv, timeout=0)
 
-    def test_broadcast_pipe(self):
+        s2.close()
+        assert check.recv() == 'empty'
+
+    def test_pipe(self):
         h = vanilla.Hub()
 
         b = h.broadcast()
-
         source = h.pulse(20)
         source.pipe(b)
-
         check = h.queue(10)
 
         def subscriber(s, name):
