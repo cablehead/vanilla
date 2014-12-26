@@ -1,6 +1,5 @@
 __import__('pkg_resources').declare_namespace(__name__) 
 
-
 from vanilla.core import Hub
 
 from vanilla.exception import ConnectionLost

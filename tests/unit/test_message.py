@@ -118,6 +118,19 @@ class TestPipe(object):
         p1.close()
         assert p2.recv() == 'Toby'
 
+    def test_onclose_piped_to_router(self):
+        h = vanilla.Hub()
+        sender, recver = h.pipe()
+
+        p2 = h.queue(1)
+        recver.onclose(p2.send, 'Toby')
+
+        r = h.router()
+        recver.pipe(r)
+        r.close()
+
+        assert p2.recv() == 'Toby'
+
     def test_timeout(self):
         h = vanilla.Hub()
 

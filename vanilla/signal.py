@@ -1,49 +1,49 @@
+from __future__ import absolute_import
+
 import signal
 
-import vanilla.exception
 
-
-class Signal(object):
+class __plugin__(object):
     def __init__(self, hub):
         self.hub = hub
-        self.fd_r = None
-        self.fd_w = None
+        self.p = None
         self.mapper = {}
 
     def start(self):
-        pipe_r, pipe_w = C.pipe()
-        self.fd_r = self.hub.poll.fileno(pipe_r)
-        self.fd_w = self.hub.poll.fileno(pipe_w)
+        assert not self.p
+        self.p = self.hub.io.pipe()
 
         @self.hub.spawn
         def _():
-            while True:
-                try:
-                    data = self.fd_r.read()
-                # TODO: cleanup shutdown
-                except vanilla.exception.Halt:
-                    break
+            for data in self.p.recver:
                 # TODO: add protocol to read byte at a time
                 assert len(data) == 1
                 sig = ord(data)
                 self.mapper[sig].send(sig)
+            self.p = None
 
     def capture(self, sig):
-        if not self.fd_r:
+        if not self.p:
             self.start()
 
         def handler(sig, frame):
-            self.fd_w.write(chr(sig))
+            self.p.send(chr(sig))
 
+        self.mapper[sig] = self.hub.broadcast()
+        self.mapper[sig].onempty(self.uncapture, sig)
         signal.signal(sig, handler)
+
+    def uncapture(self, sig):
+        assert not self.mapper[sig].subscribers
+        signal.signal(sig, signal.SIG_DFL)
+        del self.mapper[sig]
+        if not self.mapper:
+            self.p.close()
 
     def subscribe(self, *signals):
         router = self.hub.router()
-
         for sig in signals:
             if sig not in self.mapper:
                 self.capture(sig)
-                self.mapper[sig] = self.hub.broadcast()
             self.mapper[sig].subscribe().pipe(router)
-
         return router.recver

@@ -1,5 +1,6 @@
 import socket
 import fcntl
+import errno
 import os
 
 import vanilla.exception
@@ -103,7 +104,7 @@ class Sender(object):
                 try:
                     n = self.fd.write(data)
                 except (socket.error, OSError), e:
-                    if e.errno == vanilla.poll.EAGAIN:
+                    if e.errno == errno.EAGAIN:
                         self.gate.clear().recv()
                         continue
                     self.close()
@@ -133,7 +134,7 @@ def Recver(fd):
                 try:
                     data = fd.read(16384)
                 except (socket.error, OSError), e:
-                    if e.errno == vanilla.poll.EAGAIN:
+                    if e.errno == errno.EAGAIN:
                         break
                     """
                     # TODO: investigate handling non-blocking ssl correctly

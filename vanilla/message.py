@@ -598,6 +598,7 @@ class Router(object):
                 self.hub.throw_to(current, vanilla.exception.Abandoned)
 
         def connect(self, recver):
+            self.onclose(recver.close)
             recver.consume(self.send)
 
     def __new__(cls, hub):
@@ -635,6 +636,7 @@ class Broadcast(object):
         return recver
 
     def connect(self, recver):
+        # TODO: this probably should wire onclose to recver.close
         recver.consume(self.send)
 
 

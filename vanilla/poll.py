@@ -1,5 +1,6 @@
 import operator
 import select
+import errno
 
 
 POLLIN = 1
@@ -8,8 +9,6 @@ POLLERR = 3
 
 
 if hasattr(select, 'kqueue'):
-    EAGAIN = 35
-
     class Poll(object):
         def __init__(self):
             self.q = select.kqueue()
@@ -37,7 +36,14 @@ if hasattr(select, 'kqueue'):
         def poll(self, timeout=None):
             if timeout == -1:
                 timeout = None
-            events = self.q.control(None, 4, timeout)
+            while True:
+                try:
+                    events = self.q.control(None, 4, timeout)
+                    break
+                except OSError, err:
+                    if err.errno == errno.EINTR:
+                        continue
+                    raise
             return [(
                 e.ident,
                 POLLERR if e.flags & (select.KQ_EV_EOF | select.KQ_EV_ERROR)
@@ -45,8 +51,6 @@ if hasattr(select, 'kqueue'):
 
 
 elif hasattr(select, 'epoll'):
-    EAGAIN = 11
-
     class Poll(object):
         def __init__(self):
             self.q = select.epoll()

@@ -25,8 +25,6 @@ class TestSignal(object):
         pytest.raises(vanilla.Halt, s1.recv)
         assert s2.recv() == signal.SIGALRM
 
-        # TODO:
-        return
         # assert that removing the last listener for a signal cleans up the
         # registered file descriptor
         s2.close()
