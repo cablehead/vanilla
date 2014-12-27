@@ -149,43 +149,6 @@ def Recver(fd):
                     return
 
                 sender.send(data)
-
         recver.close()
 
     return recver
-
-    """
-    def read_bytes(self, n):
-        if n == 0:
-            return ''
-
-        received = len(self.read_buffer)
-        segments = [self.read_buffer]
-        while received < n:
-            segment = self.read()
-            segments.append(segment)
-            received += len(segment)
-
-        # if we've received too much, break the last segment and return the
-        # additional portion to pending
-        overage = received - n
-        if overage:
-            self.read_buffer = segments[-1][-1*(overage):]
-            segments[-1] = segments[-1][:-1*(overage)]
-        else:
-            self.read_buffer = ''
-
-        return ''.join(segments)
-
-    def read_partition(self, sep):
-        received = self.read_buffer
-        while True:
-            keep, matched, extra = received.partition(sep)
-            if matched:
-                self.read_buffer = extra
-                return keep
-            received += self.read()
-
-    def read_line(self):
-        return self.read_partition(self.line_break)
-    """

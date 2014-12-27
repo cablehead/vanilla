@@ -668,3 +668,38 @@ def State(hub, state=NoState):
 
     hub.spawn(main, upstream.recver, downstream.sender, state)
     return Pair(upstream.sender, downstream.recver)
+
+
+class Stream(object):
+    class Recver(Recver):
+        def recv(self, timeout=-1):
+            if self.extra:
+                extra = self.extra
+                self.extra = ''
+                return extra
+            return super(Stream.Recver, self).recv(timeout=timeout)
+
+        def recv_n(self, n, timeout=-1):
+            got = ''
+            while len(got) < n:
+                got += self.recv(timeout=timeout)
+            got, self.extra = got[:n], got[n:]
+            return got
+
+        def recv_partition(self, sep, timeout=-1):
+            got = ''
+            while True:
+                got += self.recv(timeout=timeout)
+                keep, matched, extra = got.partition(sep)
+                if matched:
+                    self.extra = extra
+                    return keep
+
+        def recv_line(self, timeout=-1):
+            return self.recv_partition(self.sep, timeout=timeout)
+
+    def __new__(cls, hub, recver, sep='\n'):
+        recver.__class__ = Stream.Recver
+        recver.extra = ''
+        recver.sep = sep
+        return recver

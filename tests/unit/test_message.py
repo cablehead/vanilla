@@ -3,6 +3,7 @@ import gc
 import pytest
 
 import vanilla
+import vanilla.message
 
 
 # TODO: remove
@@ -718,3 +719,31 @@ class TestSerialize(object):
             raise AssertionError('foo')
 
         pytest.raises(AssertionError, go)
+
+
+class TestStream(object):
+    def test_stream(self):
+        h = vanilla.Hub()
+
+        sender, recver = h.pipe()
+        recver = vanilla.message.Stream(h, recver)
+
+        @h.spawn
+        def _():
+            sender.send('foo')
+            sender.send('123')
+            sender.send('456')
+            sender.send('TobyTobyToby')
+            sender.send('foo\n')
+            sender.send('bar\nend.')
+            sender.close()
+
+        assert recver.recv() == 'foo'
+        assert recver.recv_n(2) == '12'
+        assert recver.recv_n(2) == '34'
+        assert recver.recv_partition('y') == '56Tob'
+        assert recver.recv_partition('y') == 'Tob'
+        assert recver.recv_line() == 'Tobyfoo'
+        assert recver.recv_line() == 'bar'
+        assert recver.recv() == 'end.'
+        pytest.raises(vanilla.Closed, recver.recv_n, 2)
