@@ -86,3 +86,10 @@ class TestIO(object):
 
         p1.send('3')
         assert p2.recv() == 6
+
+    def test_stream(self):
+        h = vanilla.Hub()
+        p = h.io.pipe()
+        h.spawn(p.send, '12foo\n')
+        assert p.recv_n(2) == '12'
+        assert p.recv_line(2) == 'foo'

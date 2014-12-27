@@ -151,4 +151,4 @@ def Recver(fd):
                 sender.send(data)
         recver.close()
 
-    return recver
+    return vanilla.message.Stream(recver)

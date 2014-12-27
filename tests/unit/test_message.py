@@ -726,7 +726,7 @@ class TestStream(object):
         h = vanilla.Hub()
 
         sender, recver = h.pipe()
-        recver = vanilla.message.Stream(h, recver)
+        recver = vanilla.message.Stream(recver)
 
         @h.spawn
         def _():

@@ -54,6 +54,15 @@ class Pair(Pair):
         """
         return self.recver.recv(timeout=timeout)
 
+    def recv_n(self, n, timeout=-1):
+        return self.recver.recv_n(n, timeout=timeout)
+
+    def recv_partition(self, sep, timeout=-1):
+        return self.recver.recv_partition(sep, timeout=timeout)
+
+    def recv_line(self, sep, timeout=-1):
+        return self.recver.recv_line(timeout=timeout)
+
     def pipe(self, target):
         """
         Pipes are Recver to the target; see :meth:`vanilla.core.Recver.pipe`
@@ -698,7 +707,7 @@ class Stream(object):
         def recv_line(self, timeout=-1):
             return self.recv_partition(self.sep, timeout=timeout)
 
-    def __new__(cls, hub, recver, sep='\n'):
+    def __new__(cls, recver, sep='\n'):
         recver.__class__ = Stream.Recver
         recver.extra = ''
         recver.sep = sep
