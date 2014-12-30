@@ -4,14 +4,25 @@ import pytest
 
 import vanilla
 
+import vanilla.http
+
+
+# TODO: remove
+import logging
+logging.basicConfig()
+
 
 class TestHTTP(object):
     def test_get_body(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            return request.path
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                request.reply(vanilla.http.Status(200), {}, request.path)
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
@@ -31,13 +42,24 @@ class TestHTTP(object):
     def test_get_chunked(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            for i in xrange(3):
-                h.sleep(10)
-                response.send(str(i))
-            if len(request.path) > 1:
-                return request.path[1:]
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+
+            for request in conn:
+                sender, recver = h.pipe()
+                request.reply(vanilla.http.Status(200), {}, recver)
+
+                for i in xrange(3):
+                    h.sleep(10)
+                    sender.send(str(i))
+
+                if len(request.path) > 1:
+                    sender.send(request.path[1:])
+
+                sender.close()
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)

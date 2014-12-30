@@ -19,7 +19,7 @@ HTTP_VERSION = 'HTTP/1.1'
 log = logging.getLogger(__name__)
 
 
-class HTTP(object):
+class __plugin__(object):
     def __init__(self, hub):
         self.hub = hub
 
@@ -33,22 +33,77 @@ class HTTP(object):
         conn = self.connect('%s://%s' % (parsed.scheme, parsed.netloc))
         return conn.get(parsed.path, params=params, headers=headers)
 
-    def listen(
-            self,
-            port=0,
-            host='127.0.0.1',
-            serve=None,
-            request_timeout=20000):
+    def listen(self, port=0, host='127.0.0.1'):
+        server = self.hub.tcp.listen(host=host, port=port)
+        return server.map(
+            lambda conn: HTTPServer(self.hub, conn))
 
-        def launch(serve):
-            @self.hub.tcp.listen(host=host, port=port)
-            def server(socket):
-                HTTPServer(self.hub, socket, request_timeout, serve)
-            return server
 
-        if serve:
-            return launch(serve)
-        return launch
+REASON_PHRASES = {
+    100: 'CONTINUE',
+    101: 'SWITCHING PROTOCOLS',
+    102: 'PROCESSING',
+    200: 'OK',
+    201: 'CREATED',
+    202: 'ACCEPTED',
+    203: 'NON-AUTHORITATIVE INFORMATION',
+    204: 'NO CONTENT',
+    205: 'RESET CONTENT',
+    206: 'PARTIAL CONTENT',
+    207: 'MULTI-STATUS',
+    208: 'ALREADY REPORTED',
+    226: 'IM USED',
+    300: 'MULTIPLE CHOICES',
+    301: 'MOVED PERMANENTLY',
+    302: 'FOUND',
+    303: 'SEE OTHER',
+    304: 'NOT MODIFIED',
+    305: 'USE PROXY',
+    306: 'RESERVED',
+    307: 'TEMPORARY REDIRECT',
+    308: 'PERMANENT REDIRECT',
+    400: 'BAD REQUEST',
+    401: 'UNAUTHORIZED',
+    402: 'PAYMENT REQUIRED',
+    403: 'FORBIDDEN',
+    404: 'NOT FOUND',
+    405: 'METHOD NOT ALLOWED',
+    406: 'NOT ACCEPTABLE',
+    407: 'PROXY AUTHENTICATION REQUIRED',
+    408: 'REQUEST TIMEOUT',
+    409: 'CONFLICT',
+    410: 'GONE',
+    411: 'LENGTH REQUIRED',
+    412: 'PRECONDITION FAILED',
+    413: 'REQUEST ENTITY TOO LARGE',
+    414: 'REQUEST-URI TOO LONG',
+    415: 'UNSUPPORTED MEDIA TYPE',
+    416: 'REQUESTED RANGE NOT SATISFIABLE',
+    417: 'EXPECTATION FAILED',
+    418: "I'M A TEAPOT",
+    422: 'UNPROCESSABLE ENTITY',
+    423: 'LOCKED',
+    424: 'FAILED DEPENDENCY',
+    426: 'UPGRADE REQUIRED',
+    428: 'PRECONDITION REQUIRED',
+    429: 'TOO MANY REQUESTS',
+    431: 'REQUEST HEADER FIELDS TOO LARGE',
+    500: 'INTERNAL SERVER ERROR',
+    501: 'NOT IMPLEMENTED',
+    502: 'BAD GATEWAY',
+    503: 'SERVICE UNAVAILABLE',
+    504: 'GATEWAY TIMEOUT',
+    505: 'HTTP VERSION NOT SUPPORTED',
+    506: 'VARIANT ALSO NEGOTIATES',
+    507: 'INSUFFICIENT STORAGE',
+    508: 'LOOP DETECTED',
+    510: 'NOT EXTENDED',
+    511: 'NETWORK AUTHENTICATION REQUIRED',
+}
+
+
+def Status(code):
+    return code, REASON_PHRASES[code]
 
 
 class Headers(object):
@@ -78,32 +133,32 @@ class Headers(object):
 
 class HTTPSocket(object):
 
-    def read_headers(self):
+    def recv_headers(self):
         headers = Headers()
         while True:
-            line = self.socket.read_line()
+            line = self.socket.recv_line()
             if not line:
                 break
             k, v = line.split(': ', 1)
             headers[k] = v.strip()
         return headers
 
-    def write_headers(self, headers):
+    def send_headers(self, headers):
         headers = '\r\n'.join(
             '%s: %s' % (k, v) for k, v in headers.iteritems())
-        self.socket.write(headers+'\r\n'+'\r\n')
+        self.socket.send(headers+'\r\n'+'\r\n')
 
-    def read_chunk(self):
-        length = int(self.socket.read_line(), 16)
+    def recv_chunk(self):
+        length = int(self.socket.recv_line(), 16)
         if length:
-            chunk = self.socket.read_bytes(length)
+            chunk = self.socket.recv_n(length)
         else:
             chunk = ''
-        assert self.socket.read_bytes(2) == '\r\n'
+        assert self.socket.recv_n(2) == '\r\n'
         return chunk
 
-    def write_chunk(self, chunk):
-        self.socket.write('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
+    def send_chunk(self, chunk):
+        self.socket.send('%s\r\n%s\r\n' % (hex(len(chunk))[2:], chunk))
 
 
 class HTTPClient(HTTPSocket):
@@ -139,7 +194,7 @@ class HTTPClient(HTTPSocket):
             self.socket.d.conn = ssl.wrap_socket(self.socket.d.conn)
             self.socket.d.conn.setblocking(0)
 
-        self.socket.line_break = '\r\n'
+        self.socket.recver.sep = '\r\n'
 
         self.agent = 'vanilla/%s' % vanilla.meta.__version__
 
@@ -157,7 +212,7 @@ class HTTPClient(HTTPSocket):
 
     def reader(self, response):
         try:
-            version, code, message = self.socket.read_line().split(' ', 2)
+            version, code, message = self.socket.recv_line().split(' ', 2)
         except vanilla.exception.Halt:
             # TODO: could we offer the ability to auto-reconnect?
             try:
@@ -172,7 +227,7 @@ class HTTPClient(HTTPSocket):
         # TODO:
         # if status.code == 408:
 
-        headers = self.read_headers()
+        headers = self.recv_headers()
         sender, recver = self.hub.pipe()
 
         response.send(self.Response(status, headers, recver))
@@ -184,14 +239,14 @@ class HTTPClient(HTTPSocket):
         try:
             if headers.get('transfer-encoding') == 'chunked':
                 while True:
-                    chunk = self.read_chunk()
+                    chunk = self.recv_chunk()
                     if not chunk:
                         break
                     sender.send(chunk)
             else:
                 # TODO:
                 # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-                body = self.socket.read_bytes(int(headers['content-length']))
+                body = self.socket.recv_n(int(headers['content-length']))
                 sender.send(body)
         except vanilla.exception.Halt:
             # TODO: could we offer the ability to auto-reconnect?
@@ -224,16 +279,16 @@ class HTTPClient(HTTPSocket):
             path += '?' + urllib.urlencode(params)
 
         request = '%s %s %s\r\n' % (method, path, HTTP_VERSION)
-        self.socket.write(request)
+        self.socket.send(request)
 
         # TODO: handle chunked transfers
         if data is not None:
             request_headers['Content-Length'] = len(data)
-        self.write_headers(request_headers)
+        self.send_headers(request_headers)
 
         # TODO: handle chunked transfers
         if data is not None:
-            self.socket.write(data)
+            self.socket.send(data)
 
     def get(self, path='/', params=None, headers=None, auth=None):
         if auth:
@@ -272,6 +327,34 @@ class HTTPClient(HTTPSocket):
 
 
 class HTTPServer(HTTPSocket):
+    def __init__(self, hub, socket):
+        self.hub = hub
+
+        self.socket = socket
+        self.socket.recver.sep = '\r\n'
+
+        self.responses = self.hub.router()
+
+        @self.responses.consume
+        def writer(response):
+            status, headers, body = response
+
+            self.socket.send('HTTP/1.1 %s %s\r\n' % status)
+
+            # if body is a pipe, use chunked encoding
+            if hasattr(body, 'recv'):
+                headers['Transfer-Encoding'] = 'chunked'
+                self.send_headers(headers)
+                for chunk in body:
+                    self.send_chunk(chunk)
+                self.send_chunk('')
+
+            # otherwise send in oneshot
+            else:
+                headers['Content-Length'] = len(body)
+                self.send_headers(headers)
+                self.socket.send(body)
+
     Request = collections.namedtuple(
         'Request', ['method', 'path', 'version', 'headers'])
 
@@ -279,154 +362,55 @@ class HTTPServer(HTTPSocket):
         def consume(self):
             return self.body
 
-    class Response(object):
-        """
-        manages the state of a HTTP Server Response
-        """
-        class HTTPStatus(Exception):
-            pass
+        def reply(self, status, headers, body):
+            self.server.responses.send((status, headers, body))
 
-        class HTTP404(HTTPStatus):
-            code = 404
-            message = 'Not Found'
-
-        def __init__(self, server, request, sender):
-            self.server = server
-            self.request = request
-            self.sender = sender
-
-            self.status = (200, 'OK')
-            self.headers = {}
-
-            self.is_started = False
-            self.is_upgraded = False
-
-        def start(self):
-            assert not self.is_started
-            self.is_started = True
-            self.sender.send(self.status)
-            self.sender.send(self.headers)
-
-        def send(self, data):
-            if not self.is_started:
-                self.headers['Transfer-Encoding'] = 'chunked'
-                self.start()
-            self.sender.send(data)
-
-        def end(self, data):
-            if not self.is_started:
-                self.headers['Content-Length'] = len(data)
-                self.start()
-                self.sender.send(data or '')
-            else:
-                if data:
-                    self.sender.send(data)
-            self.sender.close()
-
-        def upgrade(self):
-            # TODO: the connection header can be a list of tokens, this should
-            # be handled more comprehensively
-            connection_tokens = [
-                x.strip().lower()
-                for x in self.request.headers['Connection'].split(',')]
-            assert 'upgrade' in connection_tokens
-
-            assert self.request.headers['Upgrade'].lower() == 'websocket'
-
-            key = self.request.headers['Sec-WebSocket-Key']
-            accept = WebSocket.accept_key(key)
-
-            self.status = (101, 'Switching Protocols')
-            self.headers.update({
-                "Upgrade": "websocket",
-                "Connection": "Upgrade",
-                "Sec-WebSocket-Accept": accept, })
-
-            self.start()
-            self.sender.close()
-            ws = WebSocket(
-                self.server.hub, self.server.socket, is_client=False)
-            self.is_upgraded = ws
-            return ws
-
-    def __init__(self, hub, socket, request_timeout, serve):
-        self.hub = hub
-
-        self.socket = socket
-        self.socket.timeout = request_timeout
-        self.socket.line_break = '\r\n'
-
-        self.serve = serve
-
-        self.responses = self.hub.consumer(self.writer)
-
-        # TODO: handle Connection: close
-        # TODO: spawn a green thread this request
-        # TODO: handle when this is a websocket upgrade request
-
-        while True:
-            try:
-                request = self.read_request()
-            except vanilla.exception.Halt:
-                return
-
-            except vanilla.exception.Timeout:
-                print "Request Timeout"
-                self.write_response(408, 'Request Timeout')
-                self.socket.close()
-                return
-
-            sender, recver = self.hub.pipe()
-            response = self.Response(self, request, sender)
-            self.responses.send(recver)
-
-            try:
-                data = serve(request, response)
-            except response.HTTPStatus, e:
-                response.status = (e.code, e.message)
-                data = e.message
-            except Exception, e:
-                # TODO: send 500
-                raise
-
-            if response.is_upgraded:
-                response.is_upgraded.close()
-                return
-
-            response.end(data)
-
-    def writer(self, response):
-        try:
-            code, message = response.recv()
-            self.write_response(code, message)
-
-            headers = response.recv()
-            self.write_headers(headers)
-
-            if headers.get('Connection') == 'Upgrade':
-                return
-
-            if headers.get('Transfer-Encoding') == 'chunked':
-                for chunk in response:
-                    self.write_chunk(chunk)
-                self.write_chunk('')
-            else:
-                self.socket.write(response.recv())
-        except vanilla.exception.Halt:
-            # TODO: should this log as a http access log line?
-            log.error('HTTP Response: connection lost')
-
-    def read_request(self, timeout=None):
-        method, path, version = self.socket.read_line().split(' ', 2)
-        headers = self.read_headers()
+    def recv(self, timeout=None):
+        method, path, version = self.socket.recv_line().split(' ', 2)
+        headers = self.recv_headers()
         request = self.Request(method, path, version, headers)
         # TODO: handle chunked transfers
         length = int(headers.get('content-length', 0))
-        request.body = self.socket.read_bytes(length)
+        request.body = self.socket.recv_n(length)
+        request.server = self
         return request
 
-    def write_response(self, code, message):
-        self.socket.write('HTTP/1.1 %s %s\r\n' % (code, message))
+    # TODO: we should provide the standard Recver API
+    def __iter__(self):
+        while True:
+            try:
+                yield self.recv()
+            except vanilla.exception.Halt:
+                break
+
+
+"""
+def upgrade(self):
+    # TODO: the connection header can be a list of tokens, this should
+    # be handled more comprehensively
+    connection_tokens = [
+        x.strip().lower()
+        for x in self.request.headers['Connection'].split(',')]
+    assert 'upgrade' in connection_tokens
+
+    assert self.request.headers['Upgrade'].lower() == 'websocket'
+
+    key = self.request.headers['Sec-WebSocket-Key']
+    accept = WebSocket.accept_key(key)
+
+    self.status = (101, 'Switching Protocols')
+    self.headers.update({
+        "Upgrade": "websocket",
+        "Connection": "Upgrade",
+        "Sec-WebSocket-Accept": accept, })
+
+    self.start()
+    self.sender.close()
+    ws = WebSocket(
+        self.server.hub, self.server.socket, is_client=False)
+    self.is_upgraded = ws
+    return ws
+"""
 
 
 class WebSocket(object):

@@ -60,7 +60,7 @@ class Pair(Pair):
     def recv_partition(self, sep, timeout=-1):
         return self.recver.recv_partition(sep, timeout=timeout)
 
-    def recv_line(self, sep, timeout=-1):
+    def recv_line(self, timeout=-1):
         return self.recver.recv_line(timeout=timeout)
 
     def pipe(self, target):
