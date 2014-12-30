@@ -230,11 +230,14 @@ class TestWebsocket(object):
     def test_websocket(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            ws = response.upgrade()
-            while True:
-                item = ws.recv()
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            request = conn.recv()
+            ws = request.upgrade()
+            for item in ws.recver:
                 ws.send(item)
 
         uri = 'ws://localhost:%s' % serve.port
@@ -262,17 +265,23 @@ class TestWebsocket(object):
         message = 'x' * 125
         ws.send(message)
         assert h.select([ws.recver]) == (ws.recver, message)
+        h.stop()
 
     def test_websocket_end(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            ws = response.upgrade()
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            request = conn.recv()
+            ws = request.upgrade()
             ws.recv()
-            return
+            ws.close()
 
         uri = 'ws://localhost:%s' % serve.port
         ws = h.http.connect(uri).websocket('/')
         ws.send('1')
         pytest.raises(vanilla.Closed, ws.recv)
+        h.stop()

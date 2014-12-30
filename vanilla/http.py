@@ -341,6 +341,11 @@ class HTTPServer(HTTPSocket):
 
             self.socket.send('HTTP/1.1 %s %s\r\n' % status)
 
+            if headers.get('Connection') == 'Upgrade':
+                self.send_headers(headers)
+                self.responses.close()
+                return
+
             # if body is a pipe, use chunked encoding
             if hasattr(body, 'recv'):
                 headers['Transfer-Encoding'] = 'chunked'
@@ -365,6 +370,28 @@ class HTTPServer(HTTPSocket):
         def reply(self, status, headers, body):
             self.server.responses.send((status, headers, body))
 
+        def upgrade(self):
+            # TODO: the connection header can be a list of tokens, this should
+            # be handled more comprehensively
+            connection_tokens = [
+                x.strip().lower()
+                for x in self.headers['Connection'].split(',')]
+            assert 'upgrade' in connection_tokens
+
+            assert self.headers['Upgrade'].lower() == 'websocket'
+
+            key = self.headers['Sec-WebSocket-Key']
+            accept = WebSocket.accept_key(key)
+            headers = {
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Accept": accept, }
+
+            self.reply(Status(101), headers, None)
+
+            return WebSocket(
+                self.server.hub, self.server.socket, is_client=False)
+
     def recv(self, timeout=None):
         method, path, version = self.socket.recv_line().split(' ', 2)
         headers = self.recv_headers()
@@ -382,35 +409,6 @@ class HTTPServer(HTTPSocket):
                 yield self.recv()
             except vanilla.exception.Halt:
                 break
-
-
-"""
-def upgrade(self):
-    # TODO: the connection header can be a list of tokens, this should
-    # be handled more comprehensively
-    connection_tokens = [
-        x.strip().lower()
-        for x in self.request.headers['Connection'].split(',')]
-    assert 'upgrade' in connection_tokens
-
-    assert self.request.headers['Upgrade'].lower() == 'websocket'
-
-    key = self.request.headers['Sec-WebSocket-Key']
-    accept = WebSocket.accept_key(key)
-
-    self.status = (101, 'Switching Protocols')
-    self.headers.update({
-        "Upgrade": "websocket",
-        "Connection": "Upgrade",
-        "Sec-WebSocket-Accept": accept, })
-
-    self.start()
-    self.sender.close()
-    ws = WebSocket(
-        self.server.hub, self.server.socket, is_client=False)
-    self.is_upgraded = ws
-    return ws
-"""
 
 
 class WebSocket(object):
@@ -458,7 +456,7 @@ class WebSocket(object):
         return self.recver.recv()
 
     def _recv(self):
-        b1, length, = struct.unpack('!BB', self.socket.read_bytes(2))
+        b1, length, = struct.unpack('!BB', self.socket.recv_n(2))
         assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
 
         if self.is_client:
@@ -474,23 +472,23 @@ class WebSocket(object):
             # this is a control frame
             assert length <= 125
             if opcode == WebSocket.OP_CLOSE:
-                self.socket.read_bytes(length)
+                self.socket.recv_n(length)
                 self.socket.close()
                 raise vanilla.exception.Closed
 
         if length == 126:
-            length, = struct.unpack('!H', self.socket.read_bytes(2))
+            length, = struct.unpack('!H', self.socket.recv_n(2))
 
         elif length == 127:
-            length, = struct.unpack('!Q', self.socket.read_bytes(8))
+            length, = struct.unpack('!Q', self.socket.recv_n(8))
 
         assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
 
         if self.is_client:
-            return self.socket.read_bytes(length)
+            return self.socket.recv_n(length)
 
-        mask = self.socket.read_bytes(4)
-        return self.mask(mask, self.socket.read_bytes(length))
+        mask = self.socket.recv_n(4)
+        return self.mask(mask, self.socket.recv_n(length))
 
     def send(self, data):
         length = len(data)
@@ -520,16 +518,15 @@ class WebSocket(object):
 
         if self.is_client:
             mask = os.urandom(4)
-            self.socket.write(header + mask + self.mask(mask, data))
+            self.socket.send(header + mask + self.mask(mask, data))
         else:
-            self.socket.write(header + data)
+            self.socket.send(header + data)
 
     def close(self):
-        if not self.socket.closed:
-            MASK = WebSocket.MASK if self.is_client else 0
-            header = struct.pack(
-                '!BB',
-                WebSocket.OP_CLOSE | WebSocket.FIN,
-                MASK)
-            self.socket.write(header)
-            self.socket.close()
+        MASK = WebSocket.MASK if self.is_client else 0
+        header = struct.pack(
+            '!BB',
+            WebSocket.OP_CLOSE | WebSocket.FIN,
+            MASK)
+        self.socket.send(header)
+        self.socket.close()
