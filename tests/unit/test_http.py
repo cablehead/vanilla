@@ -98,9 +98,16 @@ class TestHTTP(object):
     def test_put(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            return request.method + request.consume()
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                request.reply(
+                    vanilla.http.Status(200),
+                    {},
+                    request.method+request.consume())
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
@@ -112,6 +119,7 @@ class TestHTTP(object):
         response = conn.put('/', data='toby').recv()
         assert response.status.code == 200
         assert response.consume() == 'PUTtoby'
+        h.stop()
 
     def test_delete(self):
         h = vanilla.Hub()
