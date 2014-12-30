@@ -36,8 +36,8 @@ class TestHTTP(object):
         assert response.status.code == 200
         assert response.consume() == '/toby'
 
-        # TODO: stop!!, everything needs stop testing
-        # h.stop()
+        h.stop()
+        assert not h.registered
 
     def test_get_chunked(self):
         h = vanilla.Hub()
@@ -47,7 +47,6 @@ class TestHTTP(object):
         @h.spawn
         def _():
             conn = serve.recv()
-
             for request in conn:
                 sender, recver = h.pipe()
                 request.reply(vanilla.http.Status(200), {}, recver)
@@ -72,8 +71,8 @@ class TestHTTP(object):
         assert response.status.code == 200
         assert list(response.body) == ['0', '1', '2', 'peace']
 
-        # TODO: stop!!, everything needs stop testing
-        # h.stop()
+        h.stop()
+        assert not h.registered
 
     def test_post(self):
         h = vanilla.Hub()
