@@ -124,9 +124,13 @@ class TestHTTP(object):
     def test_delete(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            return request.method
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                request.reply(vanilla.http.Status(200), {}, request.method)
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
@@ -134,35 +138,44 @@ class TestHTTP(object):
         response = conn.delete('/').recv()
         assert response.status.code == 200
         assert response.consume() == 'DELETE'
+        h.stop()
 
     def test_404(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            raise response.HTTP404
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                request.reply(vanilla.http.Status(404), {}, '')
 
         uri = 'http://localhost:%s' % serve.port
         response = h.http.connect(uri).get('/').recv()
         assert response.status.code == 404
+        h.stop()
 
     def test_overlap(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            t = request.path[1:]
-            h.sleep(int(t))
-            return t
+        serve = h.http.listen()
 
-        q = h.queue(10)
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                t = request.path[1:]
+                h.sleep(int(t))
+                request.reply(vanilla.http.Status(200), {}, t)
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
 
+        q = h.queue(10)
+
         def go(t):
-            t = str(t)
-            r = conn.get('/'+t).recv()
+            r = conn.get('/'+str(t)).recv()
             q.send(int(r.consume()))
 
         h.spawn(go, 50)
@@ -170,13 +183,21 @@ class TestHTTP(object):
 
         assert q.recv() == 50
         assert q.recv() == 20
+        h.stop()
 
     def test_basic_auth(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            return request.headers['Authorization']
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                request.reply(
+                    vanilla.http.Status(200),
+                    {},
+                    request.headers['Authorization'])
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
@@ -188,16 +209,21 @@ class TestHTTP(object):
     def test_connection_lost(self):
         h = vanilla.Hub()
 
-        @h.http.listen()
-        def serve(request, response):
-            conn.socket.close()
-            return '.'
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                conn.socket.close()
+                request.reply(vanilla.http.Status(200), {}, '.')
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
 
         response = conn.get('/')
         pytest.raises(vanilla.ConnectionLost, response.recv)
+        h.stop()
 
 
 class TestWebsocket(object):

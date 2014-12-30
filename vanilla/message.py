@@ -690,9 +690,10 @@ class Stream(object):
 
         def recv_n(self, n, timeout=-1):
             got = ''
-            while len(got) < n:
-                got += self.recv(timeout=timeout)
-            got, self.extra = got[:n], got[n:]
+            if n:
+                while len(got) < n:
+                    got += self.recv(timeout=timeout)
+                got, self.extra = got[:n], got[n:]
             return got
 
         def recv_partition(self, sep, timeout=-1):

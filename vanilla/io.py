@@ -142,7 +142,8 @@ def Recver(fd):
                     if isinstance(e, ssl.SSLError):
                         break
                     """
-                    raise
+                    recver.close()
+                    return
 
                 if not data:
                     recver.close()
