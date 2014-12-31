@@ -16,16 +16,17 @@ class __plugin__(object):
         sock.setblocking(0)
         port = sock.getsockname()[1]
         server = self.hub.register(sock.fileno(), vanilla.poll.POLLIN)
-        server.port = port
 
         @server.pipe
-        def _(upstream, downstream):
+        def server(upstream, downstream):
             for mask in upstream:
                 conn, host = sock.accept()
                 downstream.send(self.hub.io.socket(conn))
             self.hub.unregister(sock.fileno())
             sock.close()
-        return _
+
+        server.port = port
+        return server
 
     def connect(self, port, host='127.0.0.1'):
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

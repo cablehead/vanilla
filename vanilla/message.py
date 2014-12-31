@@ -222,7 +222,10 @@ class End(object):
             self.hub.throw_to(self.other.current, exception)
 
         for f, a, kw in closers:
-            f(*a, **kw)
+            try:
+                f(*a, **kw)
+            except vanilla.exception.Halt:
+                pass
 
     def stop(self):
         self.close(exception=vanilla.exception.Stop)
@@ -343,11 +346,10 @@ class Recver(End):
             h.spawn(sender1.send, 'foo')
             recver2.recv() # returns 'foo'
 
-        If *target* is a callable, a new `Pipe`_ will be created and spliced
-        between this current Recver and its Sender. The two ends of this new
-        Pipe are passed to the target callable to act as upstream and
-        downstream. The callable can then do any processing desired including
-        filtering, mapping and duplicating packets::
+        If *target* is a callable, a new `Pipe`_ will be created.  This Recver
+        and the new Pipe's Sender are passed to the target callable to act as
+        upstream and downstream. The callable can then do any processing
+        desired including filtering, mapping and duplicating packets::
 
             sender, recver = h.pipe()
 
@@ -356,7 +358,7 @@ class Recver(End):
                     if i % 2:
                         downstream.send(i*2)
 
-            recver.pipe(pipeline)
+            recver = recver.pipe(pipeline)
 
             @h.spawn
             def _():
@@ -367,35 +369,22 @@ class Recver(End):
             recver.recv() # returns 6 (2 is filtered, so 3*2)
         """
         if callable(target):
-            """
-            Rewire:
-                s1 -> m1 <- r1
-            To:
-                s1 -> m2 <- target(r2,  s2) -> m1 <- r1
-            """
-            s1 = self.other
-            m1 = self.middle
-            r1 = self
-
-            s2, r2 = self.hub.pipe()
-            m2 = r2.middle
-
-            s1.middle = m2
-            del m2.sender
-            m2.sender = weakref.ref(s1, m2.on_abandoned)
-
-            s2.middle = m1
-            del m1.sender
-            m1.sender = weakref.ref(s2, m1.on_abandoned)
+            sender, recver = self.hub.pipe()
 
             # link the two ends in the closure with a strong reference to
             # prevent them from being garbage collected if this piped section
             # is used in a chain
-            r2.downstream = s2
-            s2.upstream = r2
+            self.downstream = sender
+            sender.upstream = self
 
-            self.hub.spawn(target, r2, s2)
-            return r1
+            @self.hub.spawn
+            def _():
+                try:
+                    target(self, sender)
+                except vanilla.exception.Halt:
+                    sender.close()
+
+            return recver
 
         else:
             return target.connect(self)

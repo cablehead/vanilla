@@ -82,10 +82,10 @@ class TestIO(object):
         p2 = h.io.pipe()
 
         p1.pipe(p2)
-        p2.map(lambda x: int(x)*2)
+        p3 = p2.map(lambda x: int(x)*2)
 
         p1.send('3')
-        assert p2.recv() == 6
+        assert p3.recv() == 6
 
     def test_stream(self):
         h = vanilla.Hub()

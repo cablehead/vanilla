@@ -253,21 +253,6 @@ class TestPipe(object):
         h.spawn(p1.send, 2)
         assert p2.recv() == 4
 
-    def test_pipe_to_function_with_current_recver(self):
-        h = vanilla.Hub()
-
-        p1 = h.pipe()
-
-        check = h.pipe()
-        h.spawn(lambda: check.send(p1.recv()))
-        h.sleep(1)
-
-        p1 = p1.map(lambda x: x + 1)
-        h.sleep(1)
-
-        p1.send(1)
-        assert check.recv() == 2
-
     def test_map(self):
         h = vanilla.Hub()
         p1 = h.pipe()

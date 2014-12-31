@@ -1,4 +1,5 @@
 import collections
+import functools
 import urlparse
 import logging
 import hashlib
@@ -10,6 +11,7 @@ import ssl
 import os
 
 import vanilla.exception
+import vanilla.message
 import vanilla.meta
 
 
@@ -35,8 +37,10 @@ class __plugin__(object):
 
     def listen(self, port=0, host='127.0.0.1'):
         server = self.hub.tcp.listen(host=host, port=port)
-        return server.map(
+        ret = server.map(
             lambda conn: HTTPServer(self.hub, conn))
+        ret.port = server.port
+        return ret
 
 
 REASON_PHRASES = {
@@ -426,12 +430,25 @@ class WebSocket(object):
 
     SANITY = 1024**3  # limit fragments to 1GB
 
-    def __init__(self, hub, socket, is_client=True):
-        self.hub = hub
-        self.socket = socket
-        self.socket.timeout = -1
-        self.is_client = is_client
-        self.recver = self.hub.producer(self.reader)
+    def __new__(cls, hub, socket, is_client=True):
+        sender = hub.pipe() \
+            .map(functools.partial(WebSocket.send, is_client)) \
+            .pipe(socket).sender
+
+        recver = socket \
+            .pipe(functools.partial(WebSocket.recv, is_client)).recver
+
+        @recver.onclose
+        def close():
+            MASK = WebSocket.MASK if is_client else 0
+            header = struct.pack(
+                '!BB',
+                WebSocket.OP_CLOSE | WebSocket.FIN,
+                MASK)
+            socket.send(header)
+            socket.close()
+
+        return vanilla.message.Pair(sender, recver)
 
     @staticmethod
     def mask(mask, s):
@@ -444,56 +461,11 @@ class WebSocket(object):
         value = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
         return base64.b64encode(hashlib.sha1(value).digest())
 
-    def reader(self, sender):
-        while True:
-            try:
-                sender.send(self._recv())
-            except vanilla.exception.Halt:
-                sender.close()
-                return
-
-    def recv(self):
-        return self.recver.recv()
-
-    def _recv(self):
-        b1, length, = struct.unpack('!BB', self.socket.recv_n(2))
-        assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
-
-        if self.is_client:
-            assert not length & WebSocket.MASK
-        else:
-            assert length & WebSocket.MASK
-            length = length & WebSocket.PAYLOAD
-
-        # TODO: support binary
-        opcode = b1 & WebSocket.OP
-
-        if opcode & WebSocket.CONTROL:
-            # this is a control frame
-            assert length <= 125
-            if opcode == WebSocket.OP_CLOSE:
-                self.socket.recv_n(length)
-                self.socket.close()
-                raise vanilla.exception.Closed
-
-        if length == 126:
-            length, = struct.unpack('!H', self.socket.recv_n(2))
-
-        elif length == 127:
-            length, = struct.unpack('!Q', self.socket.recv_n(8))
-
-        assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
-
-        if self.is_client:
-            return self.socket.recv_n(length)
-
-        mask = self.socket.recv_n(4)
-        return self.mask(mask, self.socket.recv_n(length))
-
-    def send(self, data):
+    @staticmethod
+    def send(is_client, data):
         length = len(data)
 
-        MASK = WebSocket.MASK if self.is_client else 0
+        MASK = WebSocket.MASK if is_client else 0
 
         if length <= 125:
             header = struct.pack(
@@ -516,17 +488,45 @@ class WebSocket(object):
                 127 | MASK,
                 length)
 
-        if self.is_client:
+        if is_client:
             mask = os.urandom(4)
-            self.socket.send(header + mask + self.mask(mask, data))
+            return header + mask + WebSocket.mask(mask, data)
         else:
-            self.socket.send(header + data)
+            return header + data
 
-    def close(self):
-        MASK = WebSocket.MASK if self.is_client else 0
-        header = struct.pack(
-            '!BB',
-            WebSocket.OP_CLOSE | WebSocket.FIN,
-            MASK)
-        self.socket.send(header)
-        self.socket.close()
+    @staticmethod
+    def recv(is_client, upstream, downstream):
+        while True:
+            b1, length, = struct.unpack('!BB', upstream.recv_n(2))
+            assert b1 & WebSocket.FIN, "Fragmented messages not supported yet"
+
+            if is_client:
+                assert not length & WebSocket.MASK
+            else:
+                assert length & WebSocket.MASK
+                length = length & WebSocket.PAYLOAD
+
+            # TODO: support binary
+            opcode = b1 & WebSocket.OP
+
+            if opcode & WebSocket.CONTROL:
+                # this is a control frame
+                assert length <= 125
+                if opcode == WebSocket.OP_CLOSE:
+                    upstream.recv_n(length)
+                    upstream.close()
+                    raise vanilla.exception.Closed
+
+            if length == 126:
+                length, = struct.unpack('!H', upstream.recv_n(2))
+
+            elif length == 127:
+                length, = struct.unpack('!Q', upstream.recv_n(8))
+
+            assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
+
+            if is_client:
+                downstream.send(upstream.recv_n(length))
+            else:
+                mask = upstream.recv_n(4)
+                downstream.send(WebSocket.mask(mask, upstream.recv_n(length)))
