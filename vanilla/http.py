@@ -523,7 +523,8 @@ class WebSocket(object):
             elif length == 127:
                 length, = struct.unpack('!Q', upstream.recv_n(8))
 
-            assert length < WebSocket.SANITY, "Frames limited to 1Gb for sanity"
+            assert length < WebSocket.SANITY, \
+                "Frames limited to 1Gb for sanity"
 
             if is_client:
                 downstream.send(upstream.recv_n(length))
