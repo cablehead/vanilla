@@ -216,7 +216,6 @@ class TestHTTP(object):
             conn = serve.recv()
             for request in conn:
                 conn.socket.close()
-                request.reply(vanilla.http.Status(200), {}, '.')
 
         uri = 'http://localhost:%s' % serve.port
         conn = h.http.connect(uri)
@@ -277,9 +276,7 @@ class TestWebsocket(object):
             conn = serve.recv()
             request = conn.recv()
             ws = request.upgrade()
-            # TODO: test close while a request is still pending
-            # looks to be a bug in HTTPClient
-            # ws.recv()
+            ws.recv()
             ws.close()
 
         uri = 'ws://localhost:%s' % serve.port
