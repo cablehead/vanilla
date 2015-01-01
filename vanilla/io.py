@@ -142,14 +142,14 @@ def Recver(fd):
                     if isinstance(e, ssl.SSLError):
                         break
                     """
-                    recver.close()
+                    sender.close()
                     return
 
                 if not data:
-                    recver.close()
+                    sender.close()
                     return
 
                 sender.send(data)
-        recver.close()
+        sender.close()
 
     return vanilla.message.Stream(recver)

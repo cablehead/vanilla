@@ -66,6 +66,7 @@ class TestIO(object):
         assert recver.recv() == '123'
         assert recver.recv() == '456'
         pytest.raises(vanilla.Halt, recver.recv)
+        h.sleep(1)
         assert not h.registered
 
     def test_read_close(self):
