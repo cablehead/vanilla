@@ -57,7 +57,7 @@ class TestIO(object):
         sender, recver = h.io.pipe()
 
         sender.send('123')
-        h.sleep(1)
+        h.sleep(10)
         sender.send('456')
 
         sender.close()
