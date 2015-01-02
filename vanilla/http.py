@@ -207,7 +207,6 @@ class HTTPClient(HTTPSocket):
             ('User-Agent', self.agent),
             ('Host', parsed.netloc), ])
 
-        # TODO: fix API
         self.requests = self.hub.router().pipe(self.hub.queue(10))
         self.requests.pipe(self.hub.consumer(self.writer))
 
