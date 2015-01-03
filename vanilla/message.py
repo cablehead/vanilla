@@ -669,6 +669,11 @@ def State(hub, state=NoState):
 
 
 class Stream(object):
+    """
+    A `Stream`_ is a specialized `Recver`_ which provides additional methods
+    for working with streaming sources, particularly sockets and file
+    descriptors.
+    """
     class Recver(Recver):
         def recv(self, timeout=-1):
             if self.extra:
@@ -678,6 +683,10 @@ class Stream(object):
             return super(Stream.Recver, self).recv(timeout=timeout)
 
         def recv_n(self, n, timeout=-1):
+            """
+            Blocks until *n* bytes of data are available, and then returns
+            them.
+            """
             got = ''
             if n:
                 while len(got) < n:
@@ -686,6 +695,10 @@ class Stream(object):
             return got
 
         def recv_partition(self, sep, timeout=-1):
+            """
+            Blocks until the seperator *sep* is seen in the stream, and then
+            returns all data received until *sep*.
+            """
             got = ''
             while True:
                 got += self.recv(timeout=timeout)
@@ -695,6 +708,11 @@ class Stream(object):
                     return keep
 
         def recv_line(self, timeout=-1):
+            """
+            Short hand to receive a line from the stream. The line seperator
+            defaults to '\\n' but can be changed by setting recver.sep on this
+            recver.
+            """
             return self.recv_partition(self.sep, timeout=timeout)
 
     def __new__(cls, recver, sep='\n'):

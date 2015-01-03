@@ -84,6 +84,14 @@ Router
 .. autoclass:: vanilla.message.Router
 
 Queue
+-----
+
+.. automethod:: vanilla.message.Queue
+
+Stream
 ------
 
-.. autoclass:: vanilla.message.Queue
+.. autoclass:: vanilla.message.Stream
+
+.. autoclass:: vanilla.message::Stream.Recver
+   :members:
