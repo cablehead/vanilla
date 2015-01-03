@@ -14,7 +14,7 @@ requirements = [
     in open('requirements.txt').readlines() if not x.startswith('#')]
 
 
-description = "Straight forward concurrency for Python " \
+description = "Straightforward concurrency for Python " \
     "http://vanillapy.readthedocs.org/"
 
 
