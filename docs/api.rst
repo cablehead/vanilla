@@ -7,16 +7,13 @@ API Documentation
    import vanilla
    h = vanilla.Hub()
 
-Core
-====
-
 Hub
----
+===
 
 .. autoclass:: vanilla.core.Hub
 
 Concurrency
-~~~~~~~~~~~
+-----------
 
 .. automethod:: vanilla.core.Hub.spawn
 
@@ -25,7 +22,7 @@ Concurrency
 .. automethod:: vanilla.core.Hub.sleep
 
 Message Passing
-~~~~~~~~~~~~~~~
+---------------
 
 .. automethod:: vanilla.core.Hub.pipe
 
@@ -40,14 +37,14 @@ Message Passing
 .. automethod:: vanilla.core.Hub.channel
 
 Pipe Conveniences
-~~~~~~~~~~~~~~~~~
+-----------------
 
 .. automethod:: vanilla.core.Hub.producer
 
 .. automethod:: vanilla.core.Hub.pulse
 
 TCP
-~~~
+---
 
 .. py:method:: Hub.tcp.listen(port=0, host='127.0.0.1')
 

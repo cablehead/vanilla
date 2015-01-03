@@ -1,4 +1,8 @@
+Welcome to Vanilla!
+===================
+
 .. include:: ../README.rst
+   :start-line: 5
 
 Contents
 --------
