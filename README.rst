@@ -14,6 +14,12 @@ each other via Pipes. Pipes are similar to channels in Go programming.
 There's no callback crazyness and no monkey patching. Vanilla strives to be as
 explict and straightforward as possible.
 
+Documentation
+-------------
+
+`Read the Docs`_
+
+
 Here's how it looks:
 --------------------
 
@@ -66,11 +72,6 @@ In Vanilla, everything is a Pipe. Here's how TCP looks:
 
     message = conn.recv()
     conn.send("Echo: " + message)
-
-Documentation
--------------
-
-`Read the Docs`_
 
 Installation
 ------------
