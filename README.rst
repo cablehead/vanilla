@@ -8,7 +8,7 @@ Overview
 --------
 
 Vanilla allows you to build concurrent software in Python. Vanilla programs are
-structured around independent coroutines (greenlets) which communitcate with
+structured around independent coroutines (greenlets) which communicate with
 each other via Pipes. Pipes are similar to channels in Go programming.
 
 There's no callback crazyness and no monkey patching. Vanilla strives to be as
