@@ -48,9 +48,9 @@ TCP
 
 .. py:method:: Hub.tcp.listen(port=0, host='127.0.0.1')
 
-   Creates a TCP Listen on *host* and *port*. If *port* is 0, it will listen on
-   a randomonly available port. Returns a `Recver`_ which dispenses TCP
-   Connections::
+   Listens for TCP connections on *host* and *port*. If *port* is 0, it will
+   listen on a randomonly available port. Returns a `Recver`_ which dispenses
+   TCP connections::
 
         h = vanilla.Hub()
 
@@ -69,6 +69,94 @@ TCP
    Creates a TCP connection to *host* and *port* and returns a `Pair`_ of a
    `Sender`_ and `Stream`_ receiver.
 
+HTTP
+----
+
+.. py:method:: Hub.http.listen(port=0, host='127.0.0.1')
+
+    Listens for HTTP connections on *host* and *port*. If *port* is 0, it will
+    listen on a randomonly available port. Returns a `Recver`_ which dispenses
+    HTTP Server connections. A HTTP Server connection is a `Recver`_ which
+    dispenses HTTP Requests. Note that is this is a Keep-Alive connection, it
+    can dispense more than one HTTP request.
+
+HTTP Request
+~~~~~~~~~~~~
+
+A HTTP Request is a namedtuple with the following ordered items / attributes:
+
+.. py:attribute:: Request.method
+
+   The HTTP request method e.g. 'GET', 'POST', 'PUT', 'DELETE', ...
+
+.. py:attribute:: Request.path
+
+   The path requested
+
+.. py:attribute:: Request.version
+
+   The HTTP version of the request
+
+.. py:attribute:: Request.headers
+
+   A dictionary like interface to HTTP request headers. Keys are case
+   insensitive.
+
+.. py:attribute:: Request.body
+
+   A `Recver`_ which yields the request's body. If the Transfer-Encoding is
+   chunked the entire body could be yielded over a period of time with
+   successive receives.
+
+A HTTP Request also has three methods:
+
+.. py:method:: Request.consume()
+
+   Blocks until the entire request body has been received and returns it as a
+   single string.
+
+.. py:method:: Request.reply(status, headers, body)
+
+   Initiates a reply to this HTTP request. *status* is a tuple of (HTTP Code,
+   message), for example (200, 'OK'). *headers* is a dictionary like interface
+   to the HTTP headers to respond with. *body* can either be a string, in which
+   case this response will be completed immediately. Otherwise, *body* can be a
+   `Recver`_ which can have a series of strings sent, before being closed to
+   indicated the response has completed. There's no need to set Content-Length
+   or Transfer-Encoding in the response headers, this will be inferred
+   depending on whether *body* is a string or a `Recver`_.
+
+.. py:method:: Request.upgrade()
+
+    If this is a request to establish a `Websocket`_, the server can call this
+    method to upgrade this connection. This method returns a `Websocket`_, and
+    this connection can no longer be used as a HTTP connection.
+
+An example server::
+
+    h = vanilla.Hub()
+
+    serve = h.http.listen()
+
+    @serve.consume
+    def _(conn):
+        for request in conn:
+            # expects a path like /3
+            t = int(request.path[1:])
+
+            # initiate the response. we create a pipe in order to stream the
+            # body of the response.
+            sender, recver = h.pipe()
+            request.reply(vanilla.http.Status(200), {}, recver)
+
+            # for the number of times indicated in the path, transmit a string
+            # and sleep half a second
+            for i in xrange(t):
+                sender.send(str(i))
+                h.sleep(500)
+
+            # finally, close the body to indicate the response has finished
+            sender.close()
 
 Message Passing Primitives
 ==========================
