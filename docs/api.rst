@@ -77,11 +77,11 @@ HTTP
     Listens for HTTP connections on *host* and *port*. If *port* is 0, it will
     listen on a randomonly available port. Returns a `Recver`_ which dispenses
     HTTP Server connections. A HTTP Server connection is a `Recver`_ which
-    dispenses HTTP Requests. Note that is this is a Keep-Alive connection, it
-    can dispense more than one HTTP request.
+    dispenses `HTTPRequest`_. Note that if this is a Keep-Alive connection, it
+    can dispense more than one `HTTPRequest`_.
 
-HTTP Request
-~~~~~~~~~~~~
+HTTPRequest
+~~~~~~~~~~~
 
 A HTTP Request is a namedtuple with the following ordered items / attributes:
 
@@ -157,6 +157,20 @@ An example server::
 
             # finally, close the body to indicate the response has finished
             sender.close()
+
+.. py:method:: Hub.http.connect(port, host='127.0.0.1')
+
+   Establishes a `HTTPClient`_ connection to *host* and *port* and requests a
+   HTTP client connection. Note that if supported, this connection will be a
+   Keep-Alive and multiple requests can be made over the same connection.
+
+HTTPClient
+~~~~~~~~~~
+
+.. autoclass:: vanilla.http.HTTPClient()
+   :members: get, post, put, delete, websocket
+   :undoc-members:
+
 
 Message Passing Primitives
 ==========================
