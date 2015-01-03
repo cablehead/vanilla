@@ -4,7 +4,7 @@ Contents
 --------
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 4
 
    api
 
@@ -25,5 +25,5 @@ giving me a chance to send a lot of messages and to open source `this
 project <https://github.com/cablehead/vanilla>`__ which I started
 working on while there. Justin Rosenthal for believing in me, 30% of the
 time. Andres Buritica who did a lot of the early HTTP and UDP fragment
-(not pushed just yet!) work and Alison Kosinski, the coolest fiancee in
+(not pushed just yet!) work and Alison Kosinski, the coolest wife in
 the world.

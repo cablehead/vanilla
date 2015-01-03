@@ -46,6 +46,32 @@ Pipe Conveniences
 
 .. automethod:: vanilla.core.Hub.pulse
 
+TCP
+~~~
+
+.. py:method:: Hub.tcp.listen(port=0, host='127.0.0.1')
+
+   Creates a TCP Listen on *host* and *port*. If *port* is 0, it will listen on
+   a randomonly available port. Returns a `Recver`_ which dispenses TCP
+   Connections::
+
+        h = vanilla.Hub()
+
+        server = h.tcp.listen()
+
+        @server.consume
+        def echo(conn):
+            for date in conn.recver:
+                conn.send('Echo: ' + data)
+
+   The Recver returned has an additional attribute *port* which is the port
+   that was bound to.
+
+.. py:method:: Hub.tcp.connect(port, host='127.0.0.1')
+
+   Creates a TCP connection to *host* and *port* and returns a `Pair`_ of a
+   `Sender`_ and `Stream`_ receiver.
+
 
 Message Passing Primitives
 ==========================
