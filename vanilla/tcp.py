@@ -1,4 +1,5 @@
 import socket
+import errno
 
 import vanilla.exception
 import vanilla.poll
@@ -20,8 +21,14 @@ class __plugin__(object):
         @server.pipe
         def server(upstream, downstream):
             for mask in upstream:
-                conn, host = sock.accept()
-                downstream.send(self.hub.io.socket(conn))
+                while True:
+                    try:
+                        conn, host = sock.accept()
+                        downstream.send(self.hub.io.socket(conn))
+                    except (socket.error, OSError), e:
+                        if e.errno == errno.EAGAIN:
+                            break
+                        raise
             self.hub.unregister(sock.fileno())
             sock.close()
 
