@@ -195,8 +195,11 @@ class HTTPClient(HTTPSocket):
 
         # TODO: this shouldn't block on the SSL handshake
         if parsed.scheme == 'https':
-            self.socket.d.conn = ssl.wrap_socket(self.socket.d.conn)
-            self.socket.d.conn.setblocking(0)
+            # TODO: what a mess
+            conn = self.socket.sender.fd.conn
+            conn = ssl.wrap_socket(conn)
+            conn.setblocking(0)
+            self.socket.sender.fd.conn = conn
 
         self.socket.recver.sep = '\r\n'
 
