@@ -95,6 +95,42 @@ class TestHTTP(object):
         assert response.consume() == 'toby'
         h.stop()
 
+    def test_post_chunked(self):
+        print
+        print
+        h = vanilla.Hub()
+
+        serve = h.http.listen()
+
+        @h.spawn
+        def _():
+            conn = serve.recv()
+            for request in conn:
+                sender, recver = h.pipe()
+                request.reply(vanilla.http.Status(200), {}, recver)
+                for data in request.body:
+                    sender.send(data)
+                sender.close()
+
+        uri = 'http://localhost:%s' % serve.port
+        conn = h.http.connect(uri)
+
+        sender, recver = h.pipe()
+
+        @h.spawn
+        def _():
+            for i in xrange(3):
+                sender.send(str(i))
+                h.sleep(10)
+            sender.close()
+
+        response = conn.post('/', data=recver).recv()
+
+        for data in response.body:
+            print data
+
+        # h.stop()
+
     def test_put(self):
         h = vanilla.Hub()
 
