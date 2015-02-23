@@ -1,6 +1,7 @@
 import socket
 import fcntl
 import errno
+import ssl
 import os
 
 import vanilla.exception
@@ -139,9 +140,9 @@ def Recver(fd):
                     """
                     # TODO: investigate handling non-blocking ssl correctly
                     # perhaps SSL_set_fd() ??
+                    """
                     if isinstance(e, ssl.SSLError):
                         break
-                    """
                     sender.close()
                     return
 

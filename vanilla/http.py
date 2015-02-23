@@ -252,8 +252,24 @@ class HTTPClient(HTTPSocket):
             else:
                 # TODO:
                 # http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.4
-                body = self.socket.recv_n(int(headers['content-length']))
-                sender.send(body)
+                length = headers.get('content-length')
+                if length is None:
+                    """
+                    TODO:
+                    content-length isn't in header, assume body is marked by
+                    connection closed
+                    """
+                    body = ''
+                    while True:
+                        try:
+                            body += self.socket.recv()
+                        except vanilla.exception.Closed:
+                            break
+                    sender.send(body)
+                else:
+                    body = self.socket.recv_n(int(length))
+                    sender.send(body)
+
         except vanilla.exception.Halt:
             # TODO: could we offer the ability to auto-reconnect?
             sender.send(vanilla.exception.ConnectionLost())
