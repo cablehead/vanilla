@@ -95,6 +95,7 @@ class TestHTTP(object):
         assert response.consume() == 'toby'
         h.stop()
 
+    @pytest.mark.skipif(True, reason='TODO')
     def test_post_chunked(self):
         print
         print
