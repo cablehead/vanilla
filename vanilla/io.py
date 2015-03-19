@@ -13,6 +13,12 @@ class __plugin__(object):
     def __init__(self, hub):
         self.hub = hub
 
+    def fd_in(self, fd):
+        return Recver(FD_from_fileno_in(self.hub, fd))
+
+    def fd_out(self, fd):
+        return Sender(FD_from_fileno_out(self.hub, fd))
+
     def pipe(self):
         r, w = os.pipe()
         recver = Recver(FD_from_fileno_in(self.hub, r))
