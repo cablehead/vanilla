@@ -646,7 +646,11 @@ def State(hub, state=NoState):
             else:
                 watch = [recver]
 
-            ch, item = hub.select(watch)
+            try:
+                ch, item = hub.select(watch)
+            except vanilla.Closed:
+                sender.close()
+                return
             if ch == recver:
                 state = item
             else:

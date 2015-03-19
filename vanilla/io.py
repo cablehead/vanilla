@@ -125,6 +125,7 @@ class Sender(object):
         recver.consume(self.send)
 
     def close(self):
+        self.gate.close()
         self.fd.close()
 
 
