@@ -16,19 +16,24 @@ class __plugin__(object):
         @self.hub.spawn
         def _():
             for data in self.p.recver:
-                # TODO: add protocol to read byte at a time
-                assert len(data) == 1
-                sig = ord(data)
-                self.mapper[sig].send(sig)
+                for x in data:
+                    sig = ord(x)
+                    self.mapper[sig].send(sig)
             self.p = None
+
+    def injest(self, sig):
+        if self.p:
+            self.p.send(chr(sig))
 
     def capture(self, sig):
         if not self.p:
             self.start()
 
         def handler(sig, frame):
-            if self.p:
-                self.p.send(chr(sig))
+            # this is running from a preemptive callback triggered. spawn to
+            # minimize the amount of code running while preempted. note this
+            # means spawning needs to be atomic.
+            self.hub.spawn(self.injest, sig)
 
         self.mapper[sig] = self.hub.broadcast()
         self.mapper[sig].onempty(self.uncapture, sig)

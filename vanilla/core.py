@@ -476,9 +476,16 @@ class Hub(object):
                 try:
                     events = self.poll.poll(timeout=timeout)
                     break
-                # ignore IOError from signal interrupts
+                # IOError from a signal interrupt
                 except IOError:
+                    # check if the interrupt handler made work available
+                    if self.ready:
+                        break
                     continue
+
+            if self.ready:
+                # an interrupt handler must have added work, handle first
+                continue
 
             if not events:
                 # timeout
