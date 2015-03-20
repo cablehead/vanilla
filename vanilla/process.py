@@ -91,6 +91,7 @@ class __plugin__(object):
 
         inpipe_r, inpipe_w = os.pipe()
         outpipe_r, outpipe_w = os.pipe()
+        errpipe_r, errpipe_w = os.pipe()
 
         pid = os.fork()
 
@@ -106,16 +107,22 @@ class __plugin__(object):
             os.dup2(outpipe_w, 1)
             os.close(outpipe_w)
 
+            os.close(errpipe_r)
+            os.dup2(errpipe_w, 2)
+            os.close(errpipe_w)
+
             f(*a, **kw)
             return
 
         # parent continues
         os.close(inpipe_r)
         os.close(outpipe_w)
+        os.close(errpipe_w)
 
         child = self.Child(self.hub, pid)
         child.stdin = self.hub.io.fd_out(inpipe_w)
         child.stdout = self.hub.io.fd_in(outpipe_r)
+        child.stderr = self.hub.io.fd_in(errpipe_r)
         self.children.append(child)
         return child
 
