@@ -27,7 +27,8 @@ class __plugin__(object):
             self.start()
 
         def handler(sig, frame):
-            self.p.send(chr(sig))
+            if self.p:
+                self.p.send(chr(sig))
 
         self.mapper[sig] = self.hub.broadcast()
         self.mapper[sig].onempty(self.uncapture, sig)
