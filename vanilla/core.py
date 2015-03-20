@@ -493,4 +493,5 @@ class Hub(object):
                             for sender in masks.values():
                                 sender.close()
                         else:
-                            masks[mask].send(True)
+                            if masks[mask].ready:
+                                masks[mask].send(True)
