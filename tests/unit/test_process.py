@@ -16,3 +16,9 @@ class TestProcess(object):
         h = vanilla.Hub()
         child = h.process.execv(['/usr/bin/env', 'grep', '-g'])
         assert child.stderr.recv() == "grep: invalid option -- 'g'\n"
+
+    def test_stderrtoout(self):
+        h = vanilla.Hub()
+        child = h.process.execv(
+            ['/usr/bin/env', 'grep', '-g'], stderrtoout=True)
+        assert child.stdout.recv() == "grep: invalid option -- 'g'\n"

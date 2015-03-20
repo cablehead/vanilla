@@ -57,7 +57,7 @@ class __plugin__(object):
                 continue
             self.children = [
                 child for child in self.children if child.check_liveness()]
-        self.hub.signal.unsubscribe(self.sigchld)
+        self.sigchld.close()
 
     def bootstrap(self, f, *a, **kw):
         import marshal
@@ -85,13 +85,17 @@ class __plugin__(object):
         os.execv(argv[0], argv)
 
     def launch(self, f, *a, **kw):
+        stderrtoout = kw.pop('stderrtoout', False)
+
         if not self.sigchld:
             self.sigchld = self.hub.signal.subscribe(signal.SIGCHLD)
             self.hub.spawn(self.watch)
 
         inpipe_r, inpipe_w = os.pipe()
         outpipe_r, outpipe_w = os.pipe()
-        errpipe_r, errpipe_w = os.pipe()
+
+        if not stderrtoout:
+            errpipe_r, errpipe_w = os.pipe()
 
         pid = os.fork()
 
@@ -105,11 +109,16 @@ class __plugin__(object):
 
             os.close(outpipe_r)
             os.dup2(outpipe_w, 1)
-            os.close(outpipe_w)
 
-            os.close(errpipe_r)
-            os.dup2(errpipe_w, 2)
-            os.close(errpipe_w)
+            if stderrtoout:
+                os.dup2(outpipe_w, 2)
+
+            else:
+                os.close(errpipe_r)
+                os.dup2(errpipe_w, 2)
+                os.close(errpipe_w)
+
+            os.close(outpipe_w)
 
             f(*a, **kw)
             return
@@ -117,17 +126,20 @@ class __plugin__(object):
         # parent continues
         os.close(inpipe_r)
         os.close(outpipe_w)
-        os.close(errpipe_w)
 
         child = self.Child(self.hub, pid)
         child.stdin = self.hub.io.fd_out(inpipe_w)
         child.stdout = self.hub.io.fd_in(outpipe_r)
-        child.stderr = self.hub.io.fd_in(errpipe_r)
+
+        if not stderrtoout:
+            os.close(errpipe_w)
+            child.stderr = self.hub.io.fd_in(errpipe_r)
+
         self.children.append(child)
         return child
 
     def spawn(self, f, *a, **kw):
         return self.launch(self.bootstrap, f, *a, **kw)
 
-    def execv(self, args):
-        return self.launch(os.execv, args[0], args)
+    def execv(self, args, stderrtoout=False):
+        return self.launch(os.execv, args[0], args, stderrtoout=stderrtoout)
