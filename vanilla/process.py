@@ -1,11 +1,38 @@
 from __future__ import absolute_import
 
 
+import logging
+import select
 import signal
+import ctypes
 import sys
 import os
 
 import vanilla.exception
+
+
+log = logging.getLogger(__name__)
+
+
+# TODO: investigate the equivalent for BSD and OSX
+# TODO: should move this and poll into some kind of compat module
+#
+# Attempt to define a function  to ensure out children are sent a SIGTERM when
+# our process dies, to avoid orphaned children.
+
+def set_pdeathsig():
+    pass
+
+if hasattr(select, 'epoll'):
+    try:
+        PR_SET_PDEATHSIG = 1
+        libc = ctypes.CDLL('libc.so.6')
+
+        def set_pdeathsig():
+            rc = libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+            assert not rc, 'PR_SET_PDEATHSIG failed: %s' % rc
+    except:
+        log.warn('unable to load libc: needed to set PR_SET_PDEATHSIG')
 
 
 class __plugin__(object):
@@ -37,15 +64,6 @@ class __plugin__(object):
 
         def terminate(self):
             os.kill(self.pid, signal.SIGTERM)
-
-    def set_pdeathsig(self):
-        """
-        Ask Linux to ensure out children are sent a SIGTERM when our process
-        dies, to avoid orphaned children.
-        """
-        # TODO
-        # rc = C.prctl(C.PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
-        # assert not rc, 'PR_SET_PDEATHSIG failed: %s' % rc
 
     def watch(self):
         while self.children:
@@ -101,7 +119,7 @@ class __plugin__(object):
 
         if pid == 0:
             # child process
-            self.set_pdeathsig()
+            set_pdeathsig()
 
             os.close(inpipe_w)
             os.dup2(inpipe_r, 0)
