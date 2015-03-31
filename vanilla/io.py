@@ -79,6 +79,7 @@ class FD_from_socket(object):
     def __init__(self, hub, conn):
         self.hub = hub
         self.conn = conn
+        self.closed = False
         self.fileno = self.conn.fileno()
         unblock(self.fileno)
         self.pollin, self.pollout = hub.register(
@@ -91,6 +92,9 @@ class FD_from_socket(object):
         return self.conn.send(data)
 
     def close(self):
+        if self.closed:
+            return
+        self.closed = True
         self.conn.close()
         self.hub.unregister(self.fileno)
 
