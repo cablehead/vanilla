@@ -63,7 +63,10 @@ class __plugin__(object):
             return False
 
         def terminate(self):
-            os.kill(self.pid, signal.SIGTERM)
+            self.signal(signal.SIGTERM)
+
+        def signal(self, signum):
+            os.kill(self.pid, signum)
 
     def watch(self):
         while self.children:
