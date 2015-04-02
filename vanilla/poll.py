@@ -44,10 +44,16 @@ if hasattr(select, 'kqueue'):
                     if err.errno == errno.EINTR:
                         continue
                     raise
-            return [(
-                e.ident,
-                POLLERR if e.flags & (select.KQ_EV_EOF | select.KQ_EV_ERROR)
-                else self.to_[e.filter]) for e in events]
+
+            ret = []
+            for e in events:
+                if e.filter == select.KQ_FILTER_READ and e.data:
+                    ret.append((e.ident, POLLIN))
+                if e.filter == select.KQ_FILTER_WRITE:
+                    ret.append((e.ident, POLLOUT))
+                if e.flags & (select.KQ_EV_EOF | select.KQ_EV_ERROR):
+                    ret.append((e.ident, POLLERR))
+            return ret
 
 
 elif hasattr(select, 'epoll'):
