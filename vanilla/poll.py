@@ -73,12 +73,11 @@ elif hasattr(select, 'epoll'):
             events = self.q.poll(timeout=timeout)
             ret = []
             for fd, event in events:
+                for mask in self.to_:
+                    if event & mask:
+                        ret.append((fd, self.to_[mask]))
                 if event & (select.EPOLLERR | select.EPOLLHUP):
                     ret.append((fd, POLLERR))
-                else:
-                    for mask in self.to_:
-                        if event & mask:
-                            ret.append((fd, self.to_[mask]))
             return ret
 
 else:

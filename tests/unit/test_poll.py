@@ -55,5 +55,5 @@ class TestPoll(object):
 
         os.close(r)
         got = poll.poll()
-        assert got == [(w, vanilla.poll.POLLERR)]
+        assert got == [(w, vanilla.poll.POLLOUT), (w, vanilla.poll.POLLERR)]
         assert poll.poll(timeout=0) == []

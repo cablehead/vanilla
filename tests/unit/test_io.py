@@ -94,3 +94,14 @@ class TestIO(object):
         h.spawn(p.send, '12foo\n')
         assert p.recv_n(2) == '12'
         assert p.recv_line(2) == 'foo'
+
+    def test_read_final(self):
+        h = vanilla.Hub()
+        sender, recver = h.io.pipe()
+        sender.send('123')
+        sender.close()
+        pytest.raises(vanilla.Closed, sender.send, '123')
+        assert recver.recv() == '123'
+        pytest.raises(vanilla.Closed, recver.recv)
+        h.sleep(1)
+        assert not h.registered
