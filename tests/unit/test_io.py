@@ -17,6 +17,15 @@ class TestIO(object):
         assert recver.recv() == '123'
         h.stop()
 
+    def test_pipe_pipe(self):
+        """check we can pipe io.pipes"""
+        h = vanilla.Hub()
+        p1 = h.io.pipe()
+        p2 = h.pipe()
+        p1.pipe(p2)
+        p1.send('123')
+        assert p2.recv() == '123'
+
     def test_write_eagain(self):
         h = vanilla.Hub()
         sender, recver = h.io.pipe()
