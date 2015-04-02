@@ -46,7 +46,7 @@ class __plugin__(object):
             self.hub = hub
             self.pid = pid
             # TODO: should use an event here
-            self.done = self.hub.channel()
+            # self.done = self.hub.channel()
 
         def check_liveness(self):
             try:
@@ -59,7 +59,7 @@ class __plugin__(object):
 
             self.exitcode = code >> 8
             self.exitsignal = code & (2**8-1)
-            self.done.send(self)
+            # self.done.send(self)
             return False
 
         def terminate(self):
