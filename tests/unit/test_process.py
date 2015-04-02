@@ -1,7 +1,15 @@
 import vanilla
+import signal
 
 
 class TestProcess(object):
+    def test_signal(self):
+        h = vanilla.Hub()
+        child = h.process.execv(
+            ['/usr/bin/env', 'grep', '--line-buffered', 'foo'])
+        child.signal(signal.SIGTERM)
+        assert not child.check_liveness()
+
     def test_basic(self):
         h = vanilla.Hub()
         child = h.process.execv(
