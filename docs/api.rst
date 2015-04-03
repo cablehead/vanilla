@@ -84,7 +84,7 @@ HTTPServer
 
     - Returns a `Recver`_ which dispenses HTTP connections.
 
-    - These HTTP connections are a `Recver`_ which dispense dispenses
+    - These HTTP connections are a `Recver`_ which dispense
       `HTTPRequest`_. Note that if this is a Keep-Alive connection, it can
       dispense more than one `HTTPRequest`_.
 
