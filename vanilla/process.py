@@ -132,7 +132,6 @@ class __plugin__(object):
 
             if stderrtoout:
                 os.dup2(outpipe_w, 2)
-
             else:
                 os.close(errpipe_r)
                 os.dup2(errpipe_w, 2)
