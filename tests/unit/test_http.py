@@ -31,6 +31,7 @@ class TestHTTP(object):
         response = response.recv()
         assert response.status.code == 200
         assert response.consume() == '/'
+        assert response.headers['Date']
 
         response = conn.get('/toby').recv()
         assert response.status.code == 200

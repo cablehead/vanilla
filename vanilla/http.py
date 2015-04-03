@@ -6,6 +6,7 @@ import hashlib
 import base64
 import urllib
 import struct
+import time
 import uuid
 import ssl
 import os
@@ -367,6 +368,10 @@ class HTTPServer(HTTPSocket):
                 self.send_headers(headers)
                 self.responses.close()
                 return
+
+            headers.setdefault(
+                'Date',
+                time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime()))
 
             # if body is a pipe, use chunked encoding
             if hasattr(body, 'recv'):
