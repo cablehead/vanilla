@@ -21,19 +21,13 @@ class __plugin__(object):
                     self.mapper[sig].send(sig)
             self.p = None
 
-    def injest(self, sig):
-        if self.p:
-            self.p.send(chr(sig))
-
     def capture(self, sig):
         if not self.p:
             self.start()
 
         def handler(sig, frame):
-            # this is running from a preemptive callback triggered. spawn to
-            # minimize the amount of code running while preempted. note this
-            # means spawning needs to be atomic.
-            self.hub.spawn(self.injest, sig)
+            if self.p:
+                self.p.send(chr(sig))
 
         self.mapper[sig] = self.hub.broadcast()
         self.mapper[sig].onempty(self.uncapture, sig)

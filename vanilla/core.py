@@ -426,6 +426,17 @@ class Hub(object):
         except Exception, e:
             self.log.warn('Exception leaked back to main loop', exc_info=e)
 
+    def dispatch_events(self, events):
+        for fd, mask in events:
+            if fd in self.registered:
+                masks = self.registered[fd]
+                if mask == vanilla.poll.POLLERR:
+                    for sender in masks.values():
+                        sender.close()
+                else:
+                    if masks[mask].ready:
+                        masks[mask].send(True)
+
     def main(self):
         """
         Scheduler steps:
@@ -472,33 +483,10 @@ class Hub(object):
 
             # run poll
             events = None
-            while True:
-                try:
-                    events = self.poll.poll(timeout=timeout)
-                    break
-                # IOError from a signal interrupt
-                except IOError:
-                    # check if the interrupt handler made work available
-                    if self.ready:
-                        break
-                    continue
-
-            if self.ready:
-                # an interrupt handler must have added work, handle first
-                continue
-
-            if not events:
-                # timeout
-                task, a = self.scheduled.pop()
-                self.run_task(task, *a)
-
-            else:
-                for fd, mask in events:
-                    if fd in self.registered:
-                        masks = self.registered[fd]
-                        if mask == vanilla.poll.POLLERR:
-                            for sender in masks.values():
-                                sender.close()
-                        else:
-                            if masks[mask].ready:
-                                masks[mask].send(True)
+            try:
+                events = self.poll.poll(timeout=timeout)
+            # IOError from a signal interrupt
+            except IOError:
+                pass
+            if events:
+                self.spawn(self.dispatch_events, events)
