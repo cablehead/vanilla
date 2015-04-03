@@ -2,7 +2,6 @@ import collections
 import weakref
 
 from greenlet import getcurrent
-from greenlet import greenlet
 
 import vanilla.exception
 
