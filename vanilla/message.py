@@ -2,6 +2,7 @@ import collections
 import weakref
 
 from greenlet import getcurrent
+from greenlet import greenlet
 
 import vanilla.exception
 
@@ -665,20 +666,30 @@ class State(object):
         s.clear() # clear the current state
         s.recv()  # this will deadlock as state is not set
     """
+    class G(object):
+        def __init__(self, hub, state):
+            self.hub = hub
+            self.state = state
+
+        # ignore throws
+        def throw(self, *a, **kw):
+            self.hub.pause()
+
+        def __nonzero__(self):
+            return self.state != NoState
+
     class Sender(Sender):
         def init_state(self, item):
-            self.current = item != NoState
-            self.state = item
+            self.current = State.G(self.hub, item)
 
         def send(self, item, timeout=-1):
-            self.current = item != NoState
-            self.state = item
+            self.current.state = item
             if self.ready and self.current:
                 return self.hub.switch_to(self.other.peak, self.other, item)
 
         def handover(self, recver):
             assert recver.ready
-            return self.state
+            return self.current.state
 
         def connect(self, recver):
             self.onclose(recver.close)

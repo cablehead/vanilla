@@ -674,6 +674,10 @@ class TestState(object):
         s.send('Toby')
         assert s.recv() == 'Toby'
 
+        s.close()
+        pytest.raises(vanilla.Closed, s.send, 'update')
+        pytest.raises(vanilla.Closed, s.recv, 10)
+
     def test_pipe(self):
         h = vanilla.Hub()
         p = h.pipe() \
