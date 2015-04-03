@@ -1,33 +1,39 @@
 from __future__ import absolute_import
 
 import signal
+import os
 
 
 class __plugin__(object):
     def __init__(self, hub):
         self.hub = hub
-        self.p = None
+        self.fd_w = self.recver = None
         self.mapper = {}
 
     def start(self):
-        assert not self.p
-        self.p = self.hub.io.pipe()
+        assert not self.fd_w
+        r, self.fd_w = os.pipe()
+        self.recver = self.hub.io.fd_in(r)
 
         @self.hub.spawn
         def _():
-            for data in self.p.recver:
+            for data in self.recver:
                 for x in data:
                     sig = ord(x)
                     self.mapper[sig].send(sig)
-            self.p = None
+            self.recver.close()
+            self.fd_w = self.recver = None
 
     def capture(self, sig):
-        if not self.p:
+        if not self.fd_w:
             self.start()
 
         def handler(sig, frame):
-            if self.p:
-                self.p.send(chr(sig))
+            # this is running from a preemptive callback triggered by the
+            # interrupt, so we write directly to a file descriptor instead of
+            # using an io.pipe()
+            if self.fd_w:
+                os.write(self.fd_w, chr(sig))
 
         self.mapper[sig] = self.hub.broadcast()
         self.mapper[sig].onempty(self.uncapture, sig)
@@ -38,7 +44,9 @@ class __plugin__(object):
         signal.signal(sig, signal.SIG_DFL)
         del self.mapper[sig]
         if not self.mapper:
-            self.p.close()
+            os.close(self.fd_w)
+            # give the recv side a chance to close
+            self.hub.sleep(0)
 
     def subscribe(self, *signals):
         router = self.hub.router()
