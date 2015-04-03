@@ -1,5 +1,6 @@
 import vanilla
 import signal
+import os
 
 import pytest
 
@@ -41,3 +42,22 @@ class TestProcess(object):
         child.signal(signal.SIGTERM)
         child.done.recv()
         assert not child.check_liveness()
+
+    def test_env(self):
+        h = vanilla.Hub()
+
+        VAR1 = 'VANILLA_%s_VAR1' % os.getpid()
+        VAR2 = 'VANILLA_%s_VAR2' % os.getpid()
+
+        os.putenv(VAR1, 'VAR1')
+
+        child = h.process.execv(
+            ['/usr/bin/env', 'sh', '-c', 'echo $%s $%s' % (VAR1, VAR2)])
+        assert child.stdout.recv() == 'VAR1\n'
+        child.terminate()
+
+        child = h.process.execv(
+            ['/usr/bin/env', 'sh', '-c', 'echo $%s $%s' % (VAR1, VAR2)],
+            env={VAR2: 'VAR2'})
+        assert child.stdout.recv() == 'VAR2\n'
+        child.terminate()

@@ -160,5 +160,8 @@ class __plugin__(object):
     def spawn(self, f, *a, **kw):
         return self.launch(self.bootstrap, f, *a, **kw)
 
-    def execv(self, args, stderrtoout=False):
+    def execv(self, args, stderrtoout=False, env=None):
+        if env:
+            return self.launch(
+                os.execve, args[0], args, env, stderrtoout=stderrtoout)
         return self.launch(os.execv, args[0], args, stderrtoout=stderrtoout)
