@@ -643,6 +643,28 @@ class Broadcast(object):
 
 
 class State(object):
+    """
+    State is specialized `Pipe`_ which maintains the state of a previous send.
+    Sends never block, but modify the object's current state.
+
+    When the current state is unset, a recv will block until the state is set.
+
+    If state is set, recvs never block as well, and return the current state.
+
+    State can cleared using the *clear* method::
+
+        s = h.state()
+
+        s.recv()  # this will deadlock as state is not set
+
+        s.send(3) # sets state, note the send doesn't block even though there
+                  # is no recver
+        s.recv()  # 3
+        s.recv()  # 3 - note subsequent recvs don't block
+
+        s.clear() # clear the current state
+        s.recv()  # this will deadlock as state is not set
+    """
     class Sender(Sender):
         def init_state(self, item):
             self.current = item != NoState

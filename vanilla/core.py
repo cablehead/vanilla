@@ -243,6 +243,11 @@ class Hub(object):
         return vanilla.message.Broadcast(self)
 
     def state(self, state=vanilla.message.NoState):
+        """
+        Returns a `State`_ `Pair`_.
+
+        *state* if supplied sets the intial state.
+        """
         return vanilla.message.State(self, state=state)
 
     def value(self):

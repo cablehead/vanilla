@@ -36,6 +36,8 @@ Message Passing
 
 .. automethod:: vanilla.core.Hub.channel
 
+.. automethod:: vanilla.core.Hub.state
+
 Pipe Conveniences
 -----------------
 
@@ -220,3 +222,8 @@ Stream
 
 .. autoclass:: vanilla.message::Stream.Recver
    :members:
+
+State
+-----
+
+.. automethod:: vanilla.message.State
