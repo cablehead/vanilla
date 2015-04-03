@@ -54,13 +54,11 @@ class TestProcess(object):
         child = h.process.execv(
             ['/usr/bin/env', 'sh', '-c', 'echo $%s $%s' % (VAR1, VAR2)])
         assert child.stdout.recv() == 'VAR1\n'
-        child.terminate()
 
         child = h.process.execv(
             ['/usr/bin/env', 'sh', '-c', 'echo $%s $%s' % (VAR1, VAR2)],
             env={VAR2: 'VAR2'})
         assert child.stdout.recv() == 'VAR2\n'
-        child.terminate()
 
     def test_spawn(self):
         h = vanilla.Hub()
