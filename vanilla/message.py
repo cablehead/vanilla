@@ -259,6 +259,14 @@ class Sender(End):
 
         return self.hub.switch_to(self.other.peak, self.other, item)
 
+    def handover(self, recver):
+        assert recver.ready
+        recver.select()
+        # switch directly, as we need to pause
+        _, ret = recver.other.peak.switch(recver.other, None)
+        recver.unselect()
+        return ret
+
     def clear(self):
         self.send(NoState)
 
@@ -315,11 +323,7 @@ class Recver(End):
         ready, either forever or unless *timeout* milliseconds.
         """
         if self.ready:
-            self.select()
-            # switch directly, as we need to pause
-            _, ret = self.other.peak.switch(self.other, None)
-            self.unselect()
-            return ret
+            return self.other.handover(self)
 
         return self.pause(timeout=timeout)
 
@@ -638,38 +642,32 @@ class Broadcast(object):
         recver.consume(self.send)
 
 
-def State(hub, state=NoState):
-    def main(recver, sender, state):
-        while True:
-            if state != NoState:
-                watch = [recver, sender]
-            else:
-                watch = [recver]
+class State(object):
+    class Sender(Sender):
+        def init_state(self, item):
+            self.current = item != NoState
+            self.state = item
 
-            try:
-                ch, item = hub.select(watch)
-            except vanilla.Closed:
-                sender.close()
-                return
-            if ch == recver:
-                state = item
-            else:
-                sender.send(state)
+        def send(self, item, timeout=-1):
+            self.current = item != NoState
+            self.state = item
+            if self.ready and self.current:
+                return self.hub.switch_to(self.other.peak, self.other, item)
 
-    upstream = hub.pipe()
-    downstream = hub.pipe()
+        def handover(self, recver):
+            assert recver.ready
+            return self.state
 
-    # TODO: rethink this
-    old_connect = upstream.sender.connect
+        def connect(self, recver):
+            self.onclose(recver.close)
+            recver.consume(self.send)
+            return self.other
 
-    def connect(recver):
-        old_connect(recver)
-        return downstream.recver
-
-    upstream.sender.connect = connect
-
-    hub.spawn(main, upstream.recver, downstream.sender, state)
-    return Pair(upstream.sender, downstream.recver)
+    def __new__(cls, hub, state=NoState):
+        sender, recver = hub.pipe()
+        sender.__class__ = State.Sender
+        sender.init_state(state)
+        return Pair(sender, recver)
 
 
 class Stream(object):

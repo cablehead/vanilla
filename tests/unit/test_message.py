@@ -301,6 +301,15 @@ class TestPipe(object):
 
         assert p.recv() == 5
 
+    def test_pipefu(self):
+        h = vanilla.Hub()
+        p = h.pipe() \
+            .map(lambda x: x*2) \
+            .pipe(h.pipe()) \
+            .map(lambda x: x+'.')
+        h.spawn(p.send, 'foo')
+        assert p.recv() == 'foofoo.'
+
     def test_consume(self):
         h = vanilla.Hub()
         p = h.pipe()
