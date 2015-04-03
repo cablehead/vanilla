@@ -51,7 +51,7 @@ TCP
 .. py:method:: Hub.tcp.listen(port=0, host='127.0.0.1')
 
    Listens for TCP connections on *host* and *port*. If *port* is 0, it will
-   listen on a randomonly available port. Returns a `Recver`_ which dispenses
+   listen on a randomly available port. Returns a `Recver`_ which dispenses
    TCP connections::
 
         h = vanilla.Hub()
@@ -74,13 +74,34 @@ TCP
 HTTP
 ----
 
+HTTPServer
+~~~~~~~~~~
+
 .. py:method:: Hub.http.listen(port=0, host='127.0.0.1')
 
-    Listens for HTTP connections on *host* and *port*. If *port* is 0, it will
-    listen on a randomonly available port. Returns a `Recver`_ which dispenses
-    HTTP Server connections. A HTTP Server connection is a `Recver`_ which
-    dispenses `HTTPRequest`_. Note that if this is a Keep-Alive connection, it
-    can dispense more than one `HTTPRequest`_.
+    - Listens for HTTP connections on *host* and *port*. If *port* is 0, it will
+      listen on a randomly available port.
+
+    - Returns a `Recver`_ which dispenses HTTP connections.
+
+    - These HTTP connections are a `Recver`_ which dispense dispenses
+      `HTTPRequest`_. Note that if this is a Keep-Alive connection, it can
+      dispense more than one `HTTPRequest`_.
+
+An example server::
+
+    import vanilla
+
+    h = vanilla.Hub()
+
+    def handle_connection(conn):
+        for request in conn:
+            request.reply(vanilla.http.Status(200), {}, "Hello")
+
+    server = h.http.listen(8080)
+
+    for conn in server:
+        h.spawn(handle_connection, conn)
 
 HTTPRequest
 ~~~~~~~~~~~
@@ -134,14 +155,19 @@ A HTTP Request also has three methods:
     method to upgrade this connection. This method returns a `Websocket`_, and
     this connection can no longer be used as a HTTP connection.
 
-An example server::
+.. py:method:: Hub.http.connect(port, host='127.0.0.1')
+
+   Establishes a `HTTPClient`_ connection to *host* and *port* and requests a
+   HTTP client connection. Note that if supported, this connection will be a
+   Keep-Alive and multiple requests can be made over the same connection.
+
+An example server with chunked transfer::
+
+    import vanilla
 
     h = vanilla.Hub()
 
-    serve = h.http.listen()
-
-    @serve.consume
-    def _(conn):
+    def handle_connection(conn):
         for request in conn:
             # expects a path like /3
             t = int(request.path[1:])
@@ -151,20 +177,19 @@ An example server::
             sender, recver = h.pipe()
             request.reply(vanilla.http.Status(200), {}, recver)
 
-            # for the number of times indicated in the path, transmit a string
-            # and sleep half a second
+            # for the number of times indicated in the path, transmit a
+            # string and sleep half a second
             for i in xrange(t):
-                sender.send(str(i))
+                sender.send(str(i)+'\n')
                 h.sleep(500)
 
             # finally, close the body to indicate the response has finished
             sender.close()
 
-.. py:method:: Hub.http.connect(port, host='127.0.0.1')
+    server = h.http.listen(8080)
 
-   Establishes a `HTTPClient`_ connection to *host* and *port* and requests a
-   HTTP client connection. Note that if supported, this connection will be a
-   Keep-Alive and multiple requests can be made over the same connection.
+    for conn in server:
+        h.spawn(handle_connection, conn)
 
 HTTPClient
 ~~~~~~~~~~
