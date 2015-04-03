@@ -101,7 +101,7 @@ class __plugin__(object):
             f(*a, **kw)
         """ % {'pipe_r': pipe_r}).split('\n') if x)
 
-        argv = [sys.executable, '-c', bootstrap]
+        argv = [sys.executable, '-u', '-c', bootstrap]
         os.execv(argv[0], argv)
 
     def launch(self, f, *a, **kw):

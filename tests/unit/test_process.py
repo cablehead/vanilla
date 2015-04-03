@@ -61,3 +61,18 @@ class TestProcess(object):
             env={VAR2: 'VAR2'})
         assert child.stdout.recv() == 'VAR2\n'
         child.terminate()
+
+    def test_spawn(self):
+        h = vanilla.Hub()
+
+        def worker():
+            import sys
+            while True:
+                line = sys.stdin.readline()
+                sys.stdout.write('worker: %s' % line)
+
+        child = h.process.spawn(worker)
+        child.stdin.send('line1\n')
+        assert child.stdout.recv_partition('\n') == 'worker: line1'
+        child.stdin.send('line2\n')
+        assert child.stdout.recv_partition('\n') == 'worker: line2'
