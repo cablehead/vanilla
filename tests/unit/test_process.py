@@ -39,6 +39,5 @@ class TestProcess(object):
         child = h.process.execv(
             ['/usr/bin/env', 'grep', '--line-buffered', 'foo'])
         child.signal(signal.SIGTERM)
-        # give child a chance to die
-        h.sleep(10)
+        child.done.recv()
         assert not child.check_liveness()
