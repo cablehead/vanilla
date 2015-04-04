@@ -644,8 +644,8 @@ class Broadcast(object):
 
 class State(object):
     """
-    State is specialized `Pipe`_ which maintains the state of a previous send.
-    Sends never block, but modify the object's current state.
+    State is a specialized `Pipe`_ which maintains the state of a previous
+    send. Sends never block, but modify the object's current state.
 
     When the current state is unset, a recv will block until the state is set.
 
