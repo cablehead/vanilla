@@ -45,6 +45,65 @@ Pipe Conveniences
 
 .. automethod:: vanilla.core.Hub.pulse
 
+Process
+-------
+
+.. py:method:: Hub.process.execv(args, env=None, stderrtoout=False)
+
+    - Forks a child process using args.
+    - *env* is an optional dictionary of environment variables which will
+      replace the parent's environment for the child process. If not supplied
+      the child will have access to the parent's environment.
+    - if *stderrtoout* is *True* the child's stderr will be redirected to its
+      stdout.
+    - A `Child`_ object is return to interact with the child process.
+
+Example usage::
+
+    h = vanilla.Hub()
+
+    child = h.process.execv(
+        ['/usr/bin/env', 'grep', '--line-buffered', 'foo'])
+
+    child.stdin.send('foo1\n')
+    child.stdout.recv_partition('\n')   # foo1
+    child.stdin.send('bar1\n')
+    child.stdout.recv_partition('\n')   # would hang forever
+    child.stdin.send('foo2\n')
+    child.stdout.recv_partition('\n')   # foo2
+
+    child.terminate()
+    child.done.recv()
+
+Child
+~~~~~
+
+.. py:attribute:: Child.stdin
+
+    A `Sender`_ which allows you to send data to the child's stdin.
+
+.. py:attribute:: Child.stdout
+
+    A `Stream`_ recver which allows you to receive data from the child's
+    stdout.
+
+.. py:attribute:: Child.stderr
+
+    A `Stream`_ recver which allows you to receive data from the child's
+    stderr. Only available if *stderrtoout* is *False*.
+
+.. py:attribute:: Child.done
+
+    A `State`_ that will be set once the child terminates.
+
+.. py:method:: Child.terminate()
+
+    Sends the child a SIGTERM.
+
+.. py:method:: Child.signal(signum)
+
+    Sends the child *signum*.
+
 TCP
 ---
 
