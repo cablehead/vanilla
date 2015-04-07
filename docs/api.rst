@@ -226,29 +226,29 @@ An example server with chunked transfer::
 
     h = vanilla.Hub()
 
-    def handle_connection(conn):
-        for request in conn:
-            # expects a path like /3
-            t = int(request.path[1:])
 
-            # initiate the response. we create a pipe in order to stream the
-            # body of the response.
-            sender, recver = h.pipe()
-            request.reply(vanilla.http.Status(200), {}, recver)
+    serve = h.http.listen()
 
-            # for the number of times indicated in the path, transmit a
-            # string and sleep half a second
-            for i in xrange(t):
-                sender.send(str(i)+'\n')
-                h.sleep(500)
+    client = h.http.connect('http://localhost:%s' % serve.port)
+    response = client.get('/')
 
-            # finally, close the body to indicate the response has finished
-            sender.close()
 
-    server = h.http.listen(8080)
+    conn = serve.recv()  # recvs http connection
+    request = conn.recv()  # recvs http request + headers
 
-    for conn in server:
-        h.spawn(handle_connection, conn)
+    sender, recver = h.pipe()
+    request.reply(vanilla.http.Status(200), {}, recver)
+
+    response = response.recv()  # recvs the response + headers, but not the body
+
+    sender.send('oh')
+    print response.body.recv()  # 'oh'
+
+    sender.send('hai')
+    print response.body.recv()  # 'hai'
+
+    sender.close()
+    print response.body.recv()  # raises Closed
 
 HTTPClient
 ~~~~~~~~~~
