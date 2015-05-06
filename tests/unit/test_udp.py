@@ -1,7 +1,7 @@
 import vanilla
 
 
-def test_udp():
+def test_core():
     h = vanilla.Hub()
 
     serve = h.udp.listen()
@@ -20,3 +20,22 @@ def test_udp():
     serve.close()
     client.close()
     assert h.registered == {}
+
+
+def test_send():
+    h = vanilla.Hub()
+
+    N = 10000
+    serve = h.udp.listen()
+
+    @h.spawn
+    def _():
+        client = h.udp.create()
+        for i in xrange(N):
+            if not i % 2000:
+                h.sleep(1)
+            client.send((str(i), ('127.0.0.1', serve.port)))
+
+    for i in xrange(N):
+        data, addr = serve.recv()
+        assert int(data) == i

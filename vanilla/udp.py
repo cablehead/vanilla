@@ -34,7 +34,7 @@ def Sock(hub, sock):
 
 def Sender(hub, sock):
     sender, recver = hub.pipe()
-    recver.map(lambda a: sock.sendto(*a))
+    recver.consume(lambda a: sock.sendto(*a))
     return sender
 
 
