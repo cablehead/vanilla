@@ -16,3 +16,7 @@ def test_udp():
     data, addr = client.recv()
     assert data == 'Echo: foo'
     assert addr == ('127.0.0.1', serve.port)
+
+    serve.close()
+    client.close()
+    assert h.registered == {}

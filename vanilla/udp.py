@@ -1,5 +1,7 @@
+import functools
 import socket
 import errno
+import os
 
 import vanilla.message
 import vanilla.poll
@@ -36,18 +38,32 @@ def Sender(hub, sock):
     return sender
 
 
+def close(hub, fileno):
+    try:
+        os.close(fileno)
+    except OSError:
+        pass
+    hub.unregister(fileno)
+
+
 def Recver(hub, sock):
     sender, recver = hub.pipe()
+
+    recver.onclose(functools.partial(close, hub, sock.fileno()))
 
     @hub.spawn
     def _():
         ready = hub.register(sock.fileno(), vanilla.poll.POLLIN)
         for _ in ready:
-            try:
-                got = sock.recvfrom(65507)
-            except (socket.error, OSError), e:
-                if e.errno == errno.EAGAIN:
-                    continue
-            sender.send(got)
+            while True:
+                try:
+                    got = sock.recvfrom(65507)
+                except (socket.error, OSError), e:
+                    if e.errno == errno.EAGAIN:
+                        break
+                    sender.close()
+                    return
+                sender.send(got)
+        sender.close()
 
     return recver
