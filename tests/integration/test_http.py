@@ -66,6 +66,15 @@ class TestHTTP(object):
         body = response.consume()
         assert json.loads(body)['data'] == 'toby'
 
+    def test_post_form_encoded(self, scheme):
+        h = vanilla.Hub()
+        data = {'k1': 'v1', 'k2': 'v2'}
+        conn = h.http.connect('%s://httpbin.org' % scheme)
+        response = conn.post('/post', data=data).recv()
+        assert response.status.code == 200
+        body = response.consume()
+        assert json.loads(body)['form'] == data
+
 
 def test_WebSocketClient():
     h = vanilla.Hub()

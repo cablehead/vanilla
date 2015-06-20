@@ -306,7 +306,14 @@ class HTTPClient(HTTPSocket):
 
         # TODO: handle chunked transfers
         if data is not None:
+
+            if isinstance(data, dict):
+                request_headers['Content-Type'] = \
+                    'application/x-www-form-urlencoded'
+                data = urllib.urlencode(data)
+
             request_headers['Content-Length'] = len(data)
+
         self.send_headers(request_headers)
 
         # TODO: handle chunked transfers
