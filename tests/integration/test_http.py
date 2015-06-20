@@ -68,13 +68,7 @@ class TestHTTP(object):
 
 
 def test_WebSocketClient():
-    from vanilla.core import WebSocket
-
     h = vanilla.Hub()
-
-    mask = os.urandom(4)
-    message = 'Hi Toby'
-    assert WebSocket.mask(mask, WebSocket.mask(mask, message)) == message
 
     conn = h.http.connect('ws://echo.websocket.org')
     ws = conn.websocket('/')
