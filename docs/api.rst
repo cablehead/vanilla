@@ -265,7 +265,7 @@ HTTPClient
 ~~~~~~~~~~
 
 .. autoclass:: vanilla.http.HTTPClient()
-   :members: get, post, put, delete, websocket
+   :members: request, get, post, put, delete, websocket
    :undoc-members:
 
 
