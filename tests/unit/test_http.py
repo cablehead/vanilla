@@ -133,6 +133,26 @@ class TestHTTP(object):
 
         # h.stop()
 
+    def test_post_form_encoded(self):
+        h = vanilla.Hub()
+
+        serve = h.http.listen()
+
+        uri = 'http://localhost:%s' % serve.port
+        client = h.http.connect(uri)
+        response = client.post('/', data={'k1': 'v1', 'k2': 'v2'})
+
+        conn = serve.recv()
+        request = conn.recv()
+        assert request.form == {'k1': 'v1', 'k2': 'v2'}
+        assert request.form_multi == {'k1': ['v1'], 'k2': ['v2']}
+        request.reply(vanilla.http.Status(200), {}, '')
+
+        response = response.recv()
+        assert response.status.code == 200
+
+        h.stop()
+
     def test_put(self):
         h = vanilla.Hub()
 
