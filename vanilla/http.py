@@ -402,14 +402,14 @@ class HTTPServer(HTTPSocket):
         @property
         def form(self):
             if self.headers.get('Content-Type') != \
-                'application/x-www-form-urlencoded':
+                    'application/x-www-form-urlencoded':
                 raise AttributeError('not a form encoded request')
             return dict(urlparse.parse_qsl(self.body))
 
         @property
         def form_multi(self):
             if self.headers.get('Content-Type') != \
-                'application/x-www-form-urlencoded':
+                    'application/x-www-form-urlencoded':
                 raise AttributeError('not a form encoded request')
             return urlparse.parse_qs(self.body)
 
