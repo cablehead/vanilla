@@ -30,3 +30,28 @@ def test_pool():
     assert check.recv() == 0.1
     assert check.recv() == 0.05
     assert check.recv() == 0.2
+
+
+def test_wrap():
+
+    class Target(object):
+        def __init__(self):
+            class Two(object):
+                def two(self):
+                    return "two"
+            self.child = Two()
+
+        def one(self):
+            return "one"
+
+    target = Target()
+    assert target.one() == "one"
+    assert target.child.two() == "two"
+
+    h = vanilla.Hub()
+
+    p = h.thread.pool(2)
+    w = p.wrap(target)
+
+    assert w.one().recv() == 'one'
+    assert w.child.two().recv() == 'two'

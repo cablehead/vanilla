@@ -22,6 +22,18 @@ class Oneshot(object):
         os.write(self.pipe_w, chr(1))
 
 
+class Wrap(object):
+    def __init__(self, pool, target):
+        self.pool = pool
+        self.target = target
+
+    def __call__(self, *a, **kw):
+        return self.pool.call(self.target, *a, **kw)
+
+    def __getattr__(self, name):
+        return Wrap(self.pool, getattr(self.target, name))
+
+
 class Pool(object):
     def __init__(self, hub, size):
         self.hub = hub
@@ -42,6 +54,9 @@ class Pool(object):
             self.threads += 1
 
         hub.spawn(self.responder)
+
+    def wrap(self, target):
+        return Wrap(self, target)
 
     def runner(self):
         while True:
