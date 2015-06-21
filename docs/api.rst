@@ -197,6 +197,17 @@ A HTTP Request also has three methods:
    Blocks until the entire request body has been received and returns it as a
    single string.
 
+.. py:attribute:: Request.form
+
+    A convenience to access form url encoded data as a dictionary. The form
+    data is available as a key, value mappings. If a key is in the form more
+    than once, only it's last value will be available.
+
+.. py:attribute:: Request.form_multi
+
+    A convenience to access form url encoded data as a dictionary. The form
+    data is available as a key, list of values mappings.
+
 .. py:method:: Request.reply(status, headers, body)
 
    Initiates a reply to this HTTP request. *status* is a tuple of (HTTP Code,
