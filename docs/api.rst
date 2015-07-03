@@ -49,6 +49,7 @@ Thread
 ------
 
 .. py:method:: Hub.thread.spawn(f, *a)
+
     - Spawns callable *f* in a new thread. A new Hub is initialized for the
       thread and passed to *f* along with arguments *a*
     - A *parent* attribute is available on the new thread's Hub which is a
