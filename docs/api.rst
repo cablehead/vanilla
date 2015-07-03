@@ -48,6 +48,29 @@ Pipe Conveniences
 Thread
 ------
 
+.. py:method:: Hub.thread.spawn(f, *a)
+    - Spawns callable *f* in a new thread. A new Hub is initialized for the
+      thread and passed to *f* along with arguments *a*
+    - A *parent* attribute is available on the new thread's Hub which is a
+      `Pipe`_ to communicate with it's parent thread
+    - spawn returns a `Pipe`_ to communicate with the new child thread
+
+Example usage::
+
+    def ticker(h, n):
+        import time
+
+        while true:
+            h.parent.send(time.time())
+            time.sleep(n)
+
+    h = vanilla.Hub()
+
+    child = h.thread.spawn(ticker, 1)
+
+    while true:
+        child.recv()
+
 .. py:method:: Hub.thread.call(f, *a)
 
     - Spawns a one-off thread to run callable *f* with arguments *a*
