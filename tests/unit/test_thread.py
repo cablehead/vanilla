@@ -5,6 +5,16 @@ import vanilla
 
 # TODO: test shutdown
 
+
+def test_pipe():
+    h = vanilla.Hub()
+    sender, recver = h.thread.pipe()
+    sender.send(1)
+    sender.send(2)
+    assert recver.recv() == 1
+    assert recver.recv() == 2
+
+
 def test_call():
     def add(a, b):
         return a + b

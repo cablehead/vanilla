@@ -4,7 +4,43 @@ import os
 
 from Queue import Queue
 
+import vanilla
+
+from vanilla import message
+
 from vanilla.exception import Closed
+
+
+class Pipe(object):
+    class Sender(object):
+        def __init__(self, q, w):
+            self.q = q
+            self.w = w
+
+        def send(self, item):
+            self.q.append(item)
+            os.write(self.w, chr(1))
+
+    def __new__(cls, hub):
+        r, w = os.pipe()
+        q = collections.deque()
+
+        sender = Pipe.Sender(q, w)
+
+        r = hub.io.fd_in(r)
+
+        @r.pipe
+        def recver(r, out):
+            for s in r:
+                for ch in s:
+                    ch = ord(ch)
+                    if not ch:
+                        break
+                    out.send(q.popleft())
+            r.close()
+            out.close()
+
+        return message.Pair(sender, recver)
 
 
 class Oneshot(object):
@@ -101,6 +137,9 @@ class Pool(object):
 class __plugin__(object):
     def __init__(self, hub):
         self.hub = hub
+
+    def pipe(self):
+        return Pipe(self.hub)
 
     def call(self, f, *a):
         return Oneshot(self.hub, f, a).recver
