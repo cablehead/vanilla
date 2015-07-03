@@ -45,6 +45,72 @@ Pipe Conveniences
 
 .. automethod:: vanilla.core.Hub.pulse
 
+Thread
+------
+
+.. py:method:: Hub.thread.call(f, *a)
+
+    - Spawns a one-off thread to run callable *f* with arguments *a*
+    - Returns a `Recver`_ which can be recv'd on to get *f*'s result
+
+Example usage::
+
+    def add(a, b):
+        return a + b
+
+    h = vanilla.Hub()
+    h.thread.call(add, 2, 3).recv()  # 5
+
+.. py:method:: Hub.thread.pool(size)
+
+    - Returns a reusable pool of *size* threads
+
+Pool
+~~~~
+
+.. py:method:: Thread.Pool.call(f, *a)
+
+    - Runs callable *f* with arguments *a* on one of the pool's threads
+    - Returns a `Recver`_ which can be recv'd on to get *f*'s result
+
+Example usage::
+
+    h = vanilla.Hub()
+
+    def sleeper(x):
+        time.sleep(x)
+        return x
+
+    p = h.thread.pool(2)
+    gather = h.router()
+
+    p.call(sleeper, 0.2).pipe(gather)
+    p.call(sleeper, 0.1).pipe(gather)
+    p.call(sleeper, 0.05).pipe(gather)
+
+    gather.recv()  # 0.1
+    gather.recv()  # 0.05
+    gather.recv()  # 0.2
+
+.. py:method:: Thread.Pool.wrap(ob)
+
+    - Wraps *ob* with a proxy which will delegate method calls on *ob* to run on
+      the pool's threads
+    - Each method call on the proxy returns a `Recver`_ which can be recv'd on
+      the get the calls result
+
+Example usage::
+
+    h = vanilla.Hub()
+
+    p = h.thread.pool(2)
+
+    db = pymongo.MongoClient()['database']
+    db = p.wrap(db)
+
+    response = db.posts.find_one({"author": "Mike"})
+    response.recv()
+
 Process
 -------
 
