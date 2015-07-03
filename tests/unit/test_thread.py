@@ -65,3 +65,20 @@ def test_wrap():
 
     assert w.one().recv() == 'one'
     assert w.child.two().recv() == 'two'
+
+
+def test_spawn():
+    def producer(h, extra):
+        assert extra == 'foo'
+        for n in h.parent.recver:
+            for i in xrange(n):
+                h.parent.send(i)
+
+    h = vanilla.Hub()
+
+    child = h.thread.spawn(producer, 'foo')
+    child.send(3)
+
+    assert child.recv() == 0
+    assert child.recv() == 1
+    assert child.recv() == 2

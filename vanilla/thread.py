@@ -17,7 +17,7 @@ class Pipe(object):
             self.q = q
             self.w = w
 
-        def send(self, item):
+        def send(self, item, timeout=-1):
             self.q.append(item)
             os.write(self.w, chr(1))
 
@@ -146,3 +146,18 @@ class __plugin__(object):
 
     def pool(self, size):
         return Pool(self.hub, size)
+
+    def spawn(self, f, *a):
+        def bootstrap(parent, f, a):
+            h = vanilla.Hub()
+            child = h.thread.pipe()
+            h.parent = message.Pair(parent.sender, child.recver)
+            h.parent.send(child.sender)
+            f(h, *a)
+            # TODO: handle shutdown
+
+        parent = self.hub.thread.pipe()
+        t = threading.Thread(target=bootstrap, args=(parent, f, a))
+        t.daemon = True
+        t.start()
+        return message.Pair(parent.recver.recv(), parent.recver)
