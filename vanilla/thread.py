@@ -75,11 +75,10 @@ class Pool(object):
         self.hub = hub
         self.size = size
 
-        pipe_r, self.pipe_w = os.pipe()
-        self.pipe_r = hub.io.fd_in(pipe_r)
+        self.parent = hub.thread.pipe().consume(
+            lambda (sender, item): sender.send(item))
 
         self.requests = Queue()
-        self.results = collections.deque()
         self.closed = False
         self.threads = 0
 
@@ -88,8 +87,6 @@ class Pool(object):
             t.daemon = True
             t.start()
             self.threads += 1
-
-        hub.spawn(self.responder)
 
     def wrap(self, target):
         return Wrap(self, target)
@@ -100,25 +97,13 @@ class Pool(object):
             if type(item) == Closed:
                 self.threads -= 1
                 if self.threads <= 0:
-                    # entire pool has stopped, send signal
-                    os.write(self.pipe_w, chr(0))
+                    # TODO: fix up shutdown
+                    self.parent.close()
                 return
-            sender, f, a, kw = item
-            result = f(*a, **kw)
-            self.requests.task_done()
-            self.results.append((sender, result))
-            # send signal to wake up main thread
-            os.write(self.pipe_w, chr(1))
 
-    def responder(self):
-        for s in self.pipe_r:
-            for ch in s:
-                ch = ord(ch)
-                if not ch:
-                    break
-                sender, result = self.results.popleft()
-                sender.send(result)
-        self.pipe_r.close()
+            sender, f, a, kw = item
+            self.parent.send((sender, f(*a, **kw)))
+            self.requests.task_done()
 
     def call(self, f, *a, **kw):
         if self.closed:
