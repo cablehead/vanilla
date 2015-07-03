@@ -43,21 +43,6 @@ class Pipe(object):
         return message.Pair(sender, recver)
 
 
-class Oneshot(object):
-    def __init__(self, hub, f, a):
-        pipe_r, self.pipe_w = os.pipe()
-        self.recver = hub.io.fd_in(pipe_r).map(self.done)
-        self.t = threading.Thread(target=self.run, args=(f, a))
-        self.t.start()
-
-    def done(self, x):
-        return self.result
-
-    def run(self, f, a):
-        self.result = f(*a)
-        os.write(self.pipe_w, chr(1))
-
-
 class Wrap(object):
     def __init__(self, pool, target):
         self.pool = pool
@@ -127,7 +112,13 @@ class __plugin__(object):
         return Pipe(self.hub)
 
     def call(self, f, *a):
-        return Oneshot(self.hub, f, a).recver
+        def bootstrap(sender, f, a):
+            sender.send(f(*a))
+
+        sender, recver = self.hub.thread.pipe()
+        self.t = threading.Thread(target=bootstrap, args=(sender, f, a))
+        self.t.start()
+        return recver
 
     def pool(self, size):
         return Pool(self.hub, size)
