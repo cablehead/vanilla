@@ -1,5 +1,3 @@
-# Organ pipe arrangement of imports; because Guido likes it
-
 from __future__ import absolute_import
 
 import collections
