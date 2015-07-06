@@ -131,10 +131,6 @@ class Pipe(object):
         h.spawn(p.send, 1)
         p.recv()      # returns 1
     """
-    __slots__ = [
-        'hub', 'recver', 'recver_current', 'sender', 'sender_current',
-        'closed', 'closers']
-
     def __new__(cls, hub):
         self = super(Pipe, cls).__new__(cls)
         self.hub = hub
@@ -232,8 +228,6 @@ class End(object):
 
 
 class Sender(End):
-    __slots__ = ['middle', 'upstream']
-
     @property
     def current(self):
         return self.middle.sender_current
@@ -303,8 +297,6 @@ class Sender(End):
 
 
 class Recver(End):
-    __slots__ = ['middle', 'downstream']
-
     @property
     def current(self):
         return self.middle.recver_current
