@@ -9,6 +9,10 @@ import vanilla.exception
 Pair = collections.namedtuple('Pair', ['sender', 'recver'])
 
 
+class EAGAIN(object):
+    """a marker to indicate an end is not ready"""
+
+
 class NoState(object):
     """a marker to indicate no state"""
 
@@ -166,40 +170,12 @@ class End(object):
         return self.middle.hub
 
     @property
-    def halted(self):
+    def closed(self):
         return bool(self.middle.closed or self.other is None)
-
-    @property
-    def ready(self):
-        if self.middle.closed:
-            raise vanilla.exception.Closed
-        if self.other is None:
-            raise vanilla.exception.Abandoned
-        return bool(self.other.current)
-
-    def select(self):
-        assert self.current is None
-        self.current = getcurrent()
-
-    def unselect(self):
-        assert self.current == getcurrent()
-        self.current = None
 
     def abandoned(self):
         if self.current:
             self.hub.throw_to(self.current, vanilla.exception.Abandoned)
-
-    @property
-    def peak(self):
-        return self.current
-
-    def pause(self, timeout=-1):
-        self.select()
-        try:
-            _, ret = self.hub.pause(timeout=timeout)
-        finally:
-            self.unselect()
-        return ret
 
     def onclose(self, f, *a, **kw):
         if not hasattr(self.middle, 'closers'):
@@ -240,25 +216,34 @@ class Sender(End):
     def other(self):
         return self.middle.recver()
 
+    def take(self):
+        if not self.current:
+            return EAGAIN
+
+        current = self.current
+        self.current = None
+        item = self.item
+        del self.item
+        self.hub.resume(current, (self, True))
+        return item
+
     def send(self, item, timeout=-1):
         """
         Send an *item* on this pair. This will block unless our Rever is ready,
         either forever or until *timeout* milliseconds.
         """
-        if not self.ready:
-            self.pause(timeout=timeout)
+        if self.closed:
+            raise vanilla.exception.Closed
 
-        if isinstance(item, Exception):
-            return self.hub.throw_to(self.other.peak, item)
+        took = self.other.give(item)
 
-        return self.hub.switch_to(self.other.peak, self.other, item)
+        if took != EAGAIN:
+            return took
 
-    def handover(self, recver):
-        assert recver.ready
-        recver.select()
-        # switch directly, as we need to pause
-        _, ret = recver.other.peak.switch(recver.other, None)
-        recver.unselect()
+        assert self.current is None
+        self.current = getcurrent()
+        self.item = item
+        _, ret = self.hub.pause(timeout=timeout)
         return ret
 
     def clear(self):
@@ -309,15 +294,33 @@ class Recver(End):
     def other(self):
         return self.middle.sender()
 
+    def give(self, item):
+        if not self.current:
+            return EAGAIN
+
+        current = self.current
+        self.current = None
+        self.hub.resume(current, (self, item))
+        return True
+
     def recv(self, timeout=-1):
         """
         Receive and item from our Sender. This will block unless our Sender is
         ready, either forever or unless *timeout* milliseconds.
         """
-        if self.ready:
-            return self.other.handover(self)
+        if self.closed:
+            raise vanilla.exception.Closed
 
-        return self.pause(timeout=timeout)
+        item = self.other.take()
+
+        if item != EAGAIN:
+            return item
+
+        assert self.current is None
+        self.current = getcurrent()
+        self.item = item
+        _, ret = self.hub.pause(timeout=timeout)
+        return ret
 
     def __iter__(self):
         while True:

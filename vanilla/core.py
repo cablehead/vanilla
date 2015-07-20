@@ -248,52 +248,6 @@ class Hub(object):
         """
         return vanilla.message.State(self, state=state)
 
-    def value(self):
-        return vanilla.message.Value(self)
-
-    def select(self, ends, timeout=-1):
-        """
-        An end is either a `Sender`_ or a `Recver`_. select takes a list of
-        *ends* and blocks until *one* of them is ready. The select will block
-        either forever, or until the optional *timeout* is reached. *timeout*
-        is in milliseconds.
-
-        It returns of tuple of (*end*, *value*) where *end* is the end that has
-        become ready. If the *end* is a `Recver`_, then it will have already
-        been *recv*'d on which will be available as *value*. For `Sender`_'s
-        however the sender is still in a ready state waiting for a *send* and
-        *value* is None.
-
-        For example, the following is an appliance that takes an upstream
-        `Recver`_ and a downstream `Sender`_. Sending to its upstream will
-        alter it's current state. This state can be read at anytime by
-        receiving on its downstream::
-
-            def state(h, upstream, downstream):
-                current = None
-                while True:
-                    end, value = h.select([upstream, downstream])
-                    if end == upstream:
-                        current = value
-                    elif end == downstream:
-                        end.send(current)
-        """
-        for end in ends:
-            if end.ready:
-                return end, isinstance(
-                    end, vanilla.message.Recver) and end.recv() or None
-
-        for end in ends:
-            end.select()
-
-        try:
-            fired, item = self.pause(timeout=timeout)
-        finally:
-            for end in ends:
-                end.unselect()
-
-        return fired, item
-
     def pause(self, timeout=-1):
         if timeout > -1:
             item = self.scheduled.add(
@@ -314,11 +268,16 @@ class Hub(object):
                 self.scheduled.remove(item)
 
         # TODO: rework State's is set test to be more natural
+        """
         if self.stopped.recver.ready:
             raise vanilla.exception.Stop(
                 'Hub stopped while we were paused. There must be a deadlock.')
+        """
 
         return resume
+
+    def resume(self, co, *a):
+        self.ready.append((co, a))
 
     def switch_to(self, target, *a):
         self.ready.append((getcurrent(), ()))
