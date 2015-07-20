@@ -142,11 +142,11 @@ class Pipe(object):
 
         recver = Recver(self)
         self.recver = weakref.ref(recver, self.on_abandoned)
-        self.recver_current = None
+        self.recver().current = None
 
         sender = Sender(self)
         self.sender = weakref.ref(sender, self.on_abandoned)
-        self.sender_current = None
+        self.sender().current = None
 
         return Pair(sender, recver)
 
@@ -204,14 +204,6 @@ class End(object):
 
 
 class Sender(End):
-    @property
-    def current(self):
-        return self.middle.sender_current
-
-    @current.setter
-    def current(self, value):
-        self.middle.sender_current = value
-
     @property
     def other(self):
         return self.middle.recver()
@@ -282,14 +274,6 @@ class Sender(End):
 
 
 class Recver(End):
-    @property
-    def current(self):
-        return self.middle.recver_current
-
-    @current.setter
-    def current(self, value):
-        self.middle.recver_current = value
-
     @property
     def other(self):
         return self.middle.sender()
