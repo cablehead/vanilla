@@ -152,14 +152,8 @@ class Pipe(object):
 
     def on_abandoned(self, *a, **kw):
         remaining = self.recver() or self.sender()
-        if remaining:
-            # this is running from a preemptive callback triggered by the
-            # garbage collector. we spawn the abandon clean up in order to pull
-            # execution back under a green thread owned by our hub, and to
-            # minimize the amount of code running while preempted. note this
-            # means spawning needs to be atomic.
-            self.hub.spawn(remaining.abandoned)
-
+        if remaining and remaining.current:
+            self.hub.resume(remaining.current, vanilla.exception.Abandoned())
 
 class End(object):
     def __init__(self, pipe):
@@ -173,17 +167,13 @@ class End(object):
     def closed(self):
         return bool(self.middle.closed or self.other is None)
 
-    def abandoned(self):
-        if self.current:
-            self.hub.throw_to(self.current, vanilla.exception.Abandoned)
-
     def onclose(self, f, *a, **kw):
         if not hasattr(self.middle, 'closers'):
             self.middle.closers = [(f, a, kw)]
         else:
             self.middle.closers.append((f, a, kw))
 
-    def close(self, exception=vanilla.exception.Closed):
+    def close(self, exception=vanilla.exception.Closed()):
         closers = getattr(self.middle, 'closers', [])
         if closers:
             del self.middle.closers
@@ -191,7 +181,7 @@ class End(object):
         self.middle.closed = True
 
         if self.other is not None and bool(self.other.current):
-            self.hub.throw_to(self.other.current, exception)
+            self.hub.resume(self.other.current, exception)
 
         for f, a, kw in closers:
             try:
@@ -200,7 +190,7 @@ class End(object):
                 pass
 
     def stop(self):
-        self.close(exception=vanilla.exception.Stop)
+        self.close(exception=vanilla.exception.Stop())
 
 
 class Sender(End):
@@ -225,7 +215,7 @@ class Sender(End):
         either forever or until *timeout* milliseconds.
         """
         if self.closed:
-            raise vanilla.exception.Closed
+            raise vanilla.exception.Closed()
 
         took = self.other.give(item)
 
@@ -293,7 +283,7 @@ class Recver(End):
         ready, either forever or unless *timeout* milliseconds.
         """
         if self.closed:
-            raise vanilla.exception.Closed
+            raise vanilla.exception.Closed()
 
         item = self.other.take()
 

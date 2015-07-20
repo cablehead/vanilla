@@ -276,14 +276,20 @@ class Hub(object):
 
         return resume
 
+    def cont(self):
+        self.resume(getcurrent())
+        self.loop.switch()
+
     def resume(self, co, *a):
         self.ready.append((co, a))
 
     def switch_to(self, target, *a):
+        raise Exception("REMOVE switch_to")
         self.ready.append((getcurrent(), ()))
         return target.switch(*a)
 
     def throw_to(self, target, *a):
+        raise Exception("REMOVE throw_to")
         self.ready.append((getcurrent(), ()))
         """
         if len(a) == 1 and isinstance(a[0], preserve_exception):
@@ -293,8 +299,8 @@ class Hub(object):
 
     def spawn(self, f, *a):
         """
-        Schedules a new green thread to be created to run *f(\*a)* on the next
-        available tick::
+        Spawns a new green thread to run *f(\*a)*. Pauses the current green
+        thread for one tick.
 
             def echo(pipe, s):
                 pipe.send(s)
@@ -304,6 +310,7 @@ class Hub(object):
             p.recv() # returns 'hi'
         """
         self.ready.append((f, a))
+        self.cont()
 
     def spawn_later(self, ms, f, *a):
         """
@@ -380,11 +387,16 @@ class Hub(object):
         self.stop()
 
     def run_task(self, task, *a):
+        if not isinstance(task, greenlet):
+            task = greenlet(task)
+
+        if a and isinstance(a[0], Exception):
+            run = task.throw
+        else:
+            run = task.switch
+
         try:
-            if isinstance(task, greenlet):
-                task.switch(*a)
-            else:
-                greenlet(task).switch(*a)
+            run(*a)
         except Exception, e:
             self.log.warn('Exception leaked back to main loop', exc_info=e)
 
@@ -399,56 +411,48 @@ class Hub(object):
                     if masks[mask].ready:
                         masks[mask].send(True)
 
-    def main(self):
-        """
-        Scheduler steps:
-            - run ready until exhaustion
-
-            - if there's something scheduled
-                - run overdue scheduled immediately
-                - or if there's nothing registered, sleep until next scheduled
-                  and then go back to ready
-
-            - if there's nothing registered and nothing scheduled, we've
-              deadlocked, so stopped
-
-            - poll on registered, with timeout of next scheduled, if something
-              is scheduled
-        """
-
-        while True:
-            while self.ready:
-                task, a = self.ready.popleft()
-                self.run_task(task, *a)
-
-            if self.scheduled:
-                timeout = self.scheduled.timeout()
-                # run overdue scheduled immediately
-                if timeout < 0:
-                    task, a = self.scheduled.pop()
-                    self.run_task(task, *a)
-                    continue
-
-                # if nothing registered, just sleep until next scheduled
-                if not self.registered:
-                    time.sleep(timeout)
-                    task, a = self.scheduled.pop()
-                    self.run_task(task, *a)
-                    continue
-            else:
-                timeout = -1
-
+    def pump(self):
+        if not self.ready and not self.scheduled and not self.registered:
             # TODO: add better handling for deadlock
-            if not self.registered:
-                self.stopped.send(True)
-                return
+            return False
 
+        # process current ready queue once
+        ready = self.ready
+        self.ready = collections.deque()
+        while ready:
+            task, a = ready.popleft()
+            self.run_task(task, *a)
+
+        timeout = -1
+        events = None
+
+        if self.scheduled:
+            timeout = min(self.scheduled.timeout(), 0)
+
+        if self.registered:
             # run poll
-            events = None
-            try:
-                events = self.poll.poll(timeout=timeout)
-            # IOError from a signal interrupt
-            except IOError:
-                pass
-            if events:
-                self.spawn(self.dispatch_events, events)
+            while True:
+                try:
+                    events = self.poll.poll(timeout=timeout)
+                    break
+                # IOError from a signal interrupt
+                except IOError:
+                    pass
+        else:
+            if timeout > 0:
+                time.sleep(timeout)
+
+        while self.scheduled and self.scheduled.timeout() < 0:
+            task, a = self.scheduled.pop()
+            self.run_task(task, *a)
+
+        if events:
+            self.spawn(self.dispatch_events, events)
+
+        return True
+
+    def main(self):
+        while True:
+            if not self.pump():
+                break
+        self.stopped.send(True)
