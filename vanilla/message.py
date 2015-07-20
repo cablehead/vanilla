@@ -155,6 +155,7 @@ class Pipe(object):
         if remaining and remaining.current:
             self.hub.resume(remaining.current, vanilla.exception.Abandoned())
 
+
 class End(object):
     def __init__(self, pipe):
         self.middle = pipe
