@@ -113,12 +113,15 @@ class TestPipe(object):
 
     def test_onclose(self):
         h = vanilla.Hub()
-        p1 = h.pipe()
-        p2 = h.queue(1)
-        p1.onclose(p2.send, 'Toby')
-        p1.close()
-        assert p2.recv() == 'Toby'
 
+        p1 = h.pipe()
+        closed = h.state()
+        p1.onclose(closed.send, True)
+
+        p1.close()
+        assert closed.recv() is True
+
+    """
     def test_onclose_piped_to_router(self):
         h = vanilla.Hub()
         sender, recver = h.pipe()
@@ -131,6 +134,7 @@ class TestPipe(object):
         r.close()
 
         assert p2.recv() == 'Toby'
+    """
 
     def test_timeout(self):
         h = vanilla.Hub()
