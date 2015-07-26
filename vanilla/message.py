@@ -655,16 +655,16 @@ class State(object):
             return self.middle.recver()
 
         def take(self):
-            if self.state == NoState:
+            if self.item == NoState:
                 return EAGAIN
-            return self.state
+            return self.item
 
-        def send(self, state, timeout=-1):
+        def send(self, item, timeout=-1):
             if self.closed:
                 raise vanilla.exception.Closed()
 
-            self.state = state
-            self.other.give(state)
+            self.item = item
+            self.other.give(item)
 
         def clear(self):
             self.send(NoState)
@@ -672,7 +672,7 @@ class State(object):
     def __new__(cls, hub, state=NoState):
         sender, recver = hub.pipe()
         sender.__class__ = State.Sender
-        sender.state = state
+        sender.item = state
         return Pair(sender, recver)
 
 
