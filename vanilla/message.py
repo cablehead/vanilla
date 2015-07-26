@@ -646,40 +646,30 @@ class State(object):
         s.clear() # clear the current state
         s.recv()  # this will deadlock as state is not set
     """
-    class G(object):
-        def __init__(self, hub, state):
-            self.hub = hub
+    class Sender(End):
+        @property
+        def other(self):
+            return self.middle.recver()
+
+        def take(self):
+            if self.state == NoState:
+                return EAGAIN
+            return self.state
+
+        def send(self, state, timeout=-1):
+            if self.closed:
+                raise vanilla.exception.Closed()
+
             self.state = state
+            self.other.give(state)
 
-        # ignore throws
-        def throw(self, *a, **kw):
-            self.hub.pause()
-
-        def __nonzero__(self):
-            return self.state != NoState
-
-    class Sender(Sender):
-        def init_state(self, item):
-            self.current = State.G(self.hub, item)
-
-        def send(self, item, timeout=-1):
-            self.current.state = item
-            if self.ready and self.current:
-                return self.hub.switch_to(self.other.peak, self.other, item)
-
-        def handover(self, recver):
-            assert recver.ready
-            return self.current.state
-
-        def connect(self, recver):
-            self.onclose(recver.close)
-            recver.consume(self.send)
-            return self.other
+        def clear(self):
+            self.send(NoState)
 
     def __new__(cls, hub, state=NoState):
         sender, recver = hub.pipe()
         sender.__class__ = State.Sender
-        sender.init_state(state)
+        sender.state = state
         return Pair(sender, recver)
 
 
