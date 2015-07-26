@@ -180,19 +180,13 @@ class TestPipe(object):
         p.send(Exception('hai'))
         assert check.recv() == 'hai'
 
-    """
     def test_throw_then_recv(self):
-        print
-        print
-
         h = vanilla.Hub()
         sender, recver = h.pipe()
-        print "HERE 1"
         h.spawn(sender.send, Exception())
-        print "HERE 2"
         pytest.raises(Exception, recver.recv)
-        print "HERE 3"
 
+    """
     def test_throw_with_timeout(self):
         print
         print

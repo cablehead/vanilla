@@ -207,10 +207,12 @@ class Sender(End):
         self.current = None
         item = self.item
         del self.item
+
         self.hub.resume(current, True)
 
-        # if isinstance(item, Exception):
-            # raise item
+        if isinstance(item, Exception):
+            raise item
+
         return item
 
     def send(self, item, timeout=-1):
