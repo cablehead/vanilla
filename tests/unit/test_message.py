@@ -263,7 +263,7 @@ class TestPipe(object):
         # p is: s4, r1
 
         h.spawn(p.send, 2)
-        h.sleep(1)
+        h.cont()
 
         assert p.recv() == 5
 
