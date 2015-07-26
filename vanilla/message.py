@@ -207,7 +207,10 @@ class Sender(End):
         self.current = None
         item = self.item
         del self.item
-        self.hub.resume(current, (self, True))
+        self.hub.resume(current, True)
+
+        # if isinstance(item, Exception):
+            # raise item
         return item
 
     def send(self, item, timeout=-1):
@@ -227,12 +230,11 @@ class Sender(End):
         self.current = getcurrent()
         self.item = item
 
-        try:
-            _, ret = self.hub.pause(timeout=timeout)
-        except:
-            self.current = None
-            del self.item
-            raise
+        ret = self.hub.pause(timeout=timeout)
+        self.current = None
+
+        if isinstance(ret, Exception):
+            raise ret
 
         return ret
 
@@ -280,7 +282,7 @@ class Recver(End):
 
         current = self.current
         self.current = None
-        self.hub.resume(current, (self, item))
+        self.hub.resume(current, item)
         return True
 
     def recv(self, timeout=-1):
@@ -298,12 +300,13 @@ class Recver(End):
 
         assert self.current is None
         self.current = getcurrent()
-        self.item = item
-        try:
-            _, ret = self.hub.pause(timeout=timeout)
-        except:
-            self.current = None
-            raise
+
+        ret = self.hub.pause(timeout=timeout)
+        self.current = None
+
+        if isinstance(ret, Exception):
+            raise ret
+
         return ret
 
     def __iter__(self):

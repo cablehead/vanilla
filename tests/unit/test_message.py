@@ -67,6 +67,7 @@ class TestAbandoned(object):
 
 
 class TestPipe(object):
+    @pytest.mark.xfail
     def test_deadlock(self):
         h = vanilla.Hub()
         p = h.pipe()
@@ -162,6 +163,22 @@ class TestPipe(object):
 
         pytest.raises(vanilla.Timeout, recver.recv, timeout=10)
         assert recver.recv(timeout=20) == 12
+
+    def test_recv_then_throw(self):
+        h = vanilla.Hub()
+
+        p = h.pipe()
+        check = h.pipe()
+
+        @h.spawn
+        def _():
+            try:
+                p.recv()
+            except Exception, e:
+                check.send(e.message)
+
+        p.send(Exception('hai'))
+        assert check.recv() == 'hai'
 
     """
     def test_throw_then_recv(self):
@@ -277,23 +294,6 @@ class TestPipe(object):
         p.send(1)
         assert check.recv() == 1
 
-    def test_exception(self):
-        h = vanilla.Hub()
-
-        p = h.pipe()
-        check = h.pipe()
-
-        @h.spawn
-        def _():
-            try:
-                p.recv()
-            except Exception, e:
-                check.send(e.message)
-
-        p.send(Exception('hai'))
-        assert check.recv() == 'hai'
-
-    # TODO: move to their own test suite
     def test_producer(self):
         h = vanilla.Hub()
 
@@ -303,7 +303,7 @@ class TestPipe(object):
                 sender.send(i)
 
         assert counter.recv() == 0
-        h.sleep(10)
+        h.cont()
         assert counter.recv() == 1
 
     def test_trigger(self):

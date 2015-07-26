@@ -257,19 +257,14 @@ class Hub(object):
 
         assert getcurrent() != self.loop, "cannot pause the main loop"
 
-        did_timeout = False
-        try:
-            resume = self.loop.switch()
-        except vanilla.exception.Timeout:
-            did_timeout = True
-            raise
-        finally:
-            if timeout > -1 and not did_timeout:
-                # since we didn't timeout, remove ourselves from scheduled
-                self.scheduled.remove(item)
+        resume = self.loop.switch()
 
-        # TODO: rework State's is set test to be more natural
+        if timeout > -1 and not isinstance(resume, vanilla.exception.Timeout):
+            # since we didn't timeout, remove ourselves from scheduled
+            self.scheduled.remove(item)
+
         """
+        # TODO: rework State's is set test to be more natural
         if self.stopped.recver.ready:
             raise vanilla.exception.Stop(
                 'Hub stopped while we were paused. There must be a deadlock.')
@@ -390,14 +385,8 @@ class Hub(object):
     def run_task(self, task, *a):
         if not isinstance(task, greenlet):
             task = greenlet(task)
-
-        if a and isinstance(a[0], Exception):
-            run = task.throw
-        else:
-            run = task.switch
-
         try:
-            run(*a)
+            task.switch(*a)
         except Exception, e:
             self.log.warn('Exception leaked back to main loop', exc_info=e)
 
