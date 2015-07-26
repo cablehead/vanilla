@@ -186,16 +186,12 @@ class TestPipe(object):
         h.spawn(sender.send, Exception())
         pytest.raises(Exception, recver.recv)
 
-    """
     def test_throw_with_timeout(self):
-        print
-        print
         h = vanilla.Hub()
         sender, recver = h.pipe()
         h.spawn(sender.send, Exception())
         pytest.raises(Exception, recver.recv, timeout=20)
         assert h.scheduled.count == 0
-    """
 
     def test_pipe(self):
         h = vanilla.Hub()
