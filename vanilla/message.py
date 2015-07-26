@@ -258,8 +258,6 @@ class Sender(End):
 
         del m1.recver
         m1.recver = weakref.ref(r2, m1.on_abandoned)
-        m1.recver_current = m2.recver_current
-
         del r1.middle
         del s2.middle
 
