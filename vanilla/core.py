@@ -257,13 +257,14 @@ class Hub(object):
 
         assert getcurrent() != self.loop, "cannot pause the main loop"
 
-        resume = None
+        did_timeout = False
         try:
             resume = self.loop.switch()
+        except vanilla.exception.Timeout:
+            did_timeout = True
+            raise
         finally:
-            if timeout > -1:
-                if isinstance(resume, vanilla.exception.Timeout):
-                    raise resume
+            if timeout > -1 and not did_timeout:
                 # since we didn't timeout, remove ourselves from scheduled
                 self.scheduled.remove(item)
 

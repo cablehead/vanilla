@@ -226,7 +226,14 @@ class Sender(End):
         assert self.current is None
         self.current = getcurrent()
         self.item = item
-        _, ret = self.hub.pause(timeout=timeout)
+
+        try:
+            _, ret = self.hub.pause(timeout=timeout)
+        except:
+            self.current = None
+            del self.item
+            raise
+
         return ret
 
     def clear(self):
@@ -294,7 +301,11 @@ class Recver(End):
         assert self.current is None
         self.current = getcurrent()
         self.item = item
-        _, ret = self.hub.pause(timeout=timeout)
+        try:
+            _, ret = self.hub.pause(timeout=timeout)
+        except:
+            self.current = None
+            raise
         return ret
 
     def __iter__(self):
