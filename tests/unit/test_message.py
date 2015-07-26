@@ -166,67 +166,6 @@ class TestPipe(object):
         pytest.raises(Exception, recver.recv, timeout=20)
         assert h.scheduled.count == 0
 
-    def test_select(self):
-        h = vanilla.Hub()
-
-        s1, r1 = h.pipe()
-        s2, r2 = h.pipe()
-        check = h.pipe()
-
-        @h.spawn
-        def _():
-            check.send(r1.recv())
-
-        @h.spawn
-        def _():
-            s2.send(10)
-            check.send('done')
-
-        ch, item = h.select([s1, r2])
-        assert ch == s1
-        s1.send(20)
-
-        ch, item = h.select([s1, r2])
-        assert ch == r2
-        assert item == 10
-
-        assert check.recv() == 20
-        assert check.recv() == 'done'
-
-    def test_select_timeout(self):
-        h = vanilla.Hub()
-
-        s1, r1 = h.pipe()
-        s2, r2 = h.pipe()
-        check = h.pipe()
-
-        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=0)
-
-        @h.spawn
-        def _():
-            h.sleep(20)
-            check.send(r1.recv())
-
-        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
-
-        ch, item = h.select([s1, r2], timeout=20)
-        assert ch == s1
-        s1.send(20)
-        assert check.recv() == 20
-
-        @h.spawn
-        def _():
-            h.sleep(20)
-            s2.send(10)
-            check.send('done')
-
-        pytest.raises(vanilla.Timeout, h.select, [s1, r2], timeout=10)
-
-        ch, item = h.select([s1, r2], timeout=20)
-        assert ch == r2
-        assert item == 10
-        assert check.recv() == 'done'
-
     def test_pipe(self):
         h = vanilla.Hub()
 
