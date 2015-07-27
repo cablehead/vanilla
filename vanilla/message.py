@@ -226,6 +226,7 @@ class Sender(End):
         took = self.other.give(item)
 
         if took != EAGAIN:
+            self.hub.cont()
             return took
 
         assert self.current is None
@@ -386,7 +387,7 @@ class Recver(End):
                 return i * 2
 
             sender, recver = h.pipe()
-            recver.map(double)
+            recver = recver.map(double)
 
             h.spawn(sender.send, 2)
             recver.recv() # returns 4
@@ -649,11 +650,7 @@ class State(object):
         s.clear() # clear the current state
         s.recv()  # this will deadlock as state is not set
     """
-    class Sender(End):
-        @property
-        def other(self):
-            return self.middle.recver()
-
+    class Sender(Sender):
         def take(self):
             if self.item == NoState:
                 return EAGAIN
@@ -666,8 +663,10 @@ class State(object):
             self.item = item
             self.other.give(item)
 
-        def clear(self):
-            self.send(NoState)
+        def connect(self, recver):
+            self.onclose(recver.close)
+            recver.consume(self.send)
+            return self.other
 
     def __new__(cls, hub, state=NoState):
         sender, recver = hub.pipe()

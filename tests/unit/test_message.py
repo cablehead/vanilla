@@ -631,14 +631,15 @@ class TestState(object):
         h = vanilla.Hub()
         p = h.pipe() \
             .map(lambda x: x*2) \
-            .pipe(h.state('Toby')) \
-            .map(lambda x: x+'.')
+            .pipe(h.state('Toby'))
 
-        assert p.recv() == 'Toby.'
+        assert p.recv() == 'Toby'
 
         p.send('foo')
-        assert p.recv() == 'foofoo.'
-        assert p.recv() == 'foofoo.'
+        # hrm - this isn't intuitive
+        h.cont()
+        assert p.recv() == 'foofoo'
+        assert p.recv() == 'foofoo'
         # TODO: should clear be able to be passed through map?
 
 
