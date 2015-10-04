@@ -6,6 +6,7 @@ import hashlib
 import base64
 import urllib
 import struct
+import json
 import time
 import uuid
 import ssl
@@ -178,6 +179,9 @@ class HTTPClient(HTTPSocket):
 
         def consume(self):
             return ''.join(self.body)
+
+        def json(self):
+            return json.loads(self.consume())
 
         def __repr__(self):
             return 'HTTPClient.Response(status=%r)' % (self.status,)

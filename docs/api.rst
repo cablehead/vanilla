@@ -287,6 +287,10 @@ A HTTP Request also has three methods:
    Blocks until the entire request body has been received and returns it as a
    single string.
 
+.. py:method:: Request.json()
+
+   Convenience to consume the entire request body, and json decode it.
+
 .. py:attribute:: Request.form
 
     A convenience to access form url encoded data as a dictionary. The form

@@ -1,3 +1,4 @@
+import json
 import gc
 
 import pytest
@@ -282,6 +283,19 @@ class TestHTTP(object):
         pytest.raises(vanilla.ConnectionLost, response.recv)
         h.stop()
 
+    def test_json(self):
+        h = vanilla.Hub()
+        serve = h.http.listen()
+        uri = 'http://localhost:%s' % serve.port
+
+        response = h.http.get(uri)
+
+        conn = serve.recv()
+        request = conn.recv()
+        request.reply(vanilla.http.Status(200), {}, json.dumps({'foo': 'bar'}))
+
+        response = response.recv()
+        assert response.json() == {'foo': 'bar'}
 
 class TestWebsocket(object):
     def test_websocket(self):
