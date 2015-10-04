@@ -297,6 +297,7 @@ class TestHTTP(object):
         response = response.recv()
         assert response.json() == {'foo': 'bar'}
 
+
 class TestWebsocket(object):
     def test_websocket(self):
         h = vanilla.Hub()
