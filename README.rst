@@ -89,6 +89,7 @@ Status
 
 .. _Read the Docs: http://vanillapy.readthedocs.org/
 .. |Vanilla| image:: http://vanillapy.readthedocs.org/en/latest/_static/logo1.png
+   :height: 150px
 .. |Build Status| image:: http://img.shields.io/travis/cablehead/vanilla.svg?style=flat-square
    :target: https://travis-ci.org/cablehead/vanilla
 .. |Coverage Status| image:: http://img.shields.io/coveralls/cablehead/vanilla.svg?style=flat-square
