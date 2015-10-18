@@ -116,7 +116,7 @@ html_sidebars = {
 html_theme_options = {
     'github_user': 'cablehead',
     'github_repo': 'vanilla',
-    'logo': 'logo.png',
+    'logo': 'logo1.png',
     'logo_name': True,
 }
 
