@@ -359,6 +359,10 @@ class HTTPClient(HTTPSocket):
 
         return WebSocket(self.hub, self.socket)
 
+    def close(self):
+        # TODO: handle inflight requests?
+        self.socket.close()
+
 
 class HTTPServer(HTTPSocket):
     def __init__(self, hub, socket):
