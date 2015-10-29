@@ -1,6 +1,14 @@
 Change log
 ==========
 
+0.1.15
+------
+
+Features
+~~~~~~~~
+
+* synthesize appropiate exit codes if process.execv is not executable
+
 0.1.14
 ------
 
