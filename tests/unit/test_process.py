@@ -24,6 +24,12 @@ class TestProcess(object):
         child.done.recv()
         assert not child.check_liveness()
 
+    def test_unexecutable(self):
+        h = vanilla.Hub()
+        child = h.process.execv(['/usr/bin/env', 'grep123'])
+        child.done.recv()
+        assert child.exitcode == 127
+
     def test_stderr(self):
         h = vanilla.Hub()
         child = h.process.execv(['/usr/bin/env', 'grep', '-g'])
