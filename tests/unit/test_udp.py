@@ -25,7 +25,7 @@ def test_core():
 def test_send():
     h = vanilla.Hub()
 
-    N = 100
+    N = 5
     serve = h.udp.listen()
 
     @h.spawn
