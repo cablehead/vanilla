@@ -1,8 +1,10 @@
 from __future__ import absolute_import
 
 
+import functools
 import logging
 import select
+import errno
 import signal
 import ctypes
 import sys
@@ -161,7 +163,26 @@ class __plugin__(object):
         return self.launch(self.bootstrap, f, *a, **kw)
 
     def execv(self, args, env=None, stderrtoout=False):
+        def tryexec(f, *a, **kw):
+            try:
+                f(*a, **kw)
+            except OSError, e:
+                if e.errno == errno.ENOENT:
+                    os._exit(127)
+                if e.errno == errno.EACCES:
+                    os._exit(126)
+                raise
+
         if env:
             return self.launch(
-                os.execve, args[0], args, env, stderrtoout=stderrtoout)
-        return self.launch(os.execv, args[0], args, stderrtoout=stderrtoout)
+                functools.partial(tryexec, os.execve),
+                args[0],
+                args,
+                env,
+                stderrtoout=stderrtoout)
+
+        return self.launch(
+            functools.partial(tryexec, os.execv),
+            args[0],
+            args,
+            stderrtoout=stderrtoout)

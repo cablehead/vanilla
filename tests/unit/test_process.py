@@ -26,9 +26,12 @@ class TestProcess(object):
 
     def test_unexecutable(self):
         h = vanilla.Hub()
-        child = h.process.execv(['/usr/bin/env', 'grep123'])
+        child = h.process.execv(['foobar123'])
         child.done.recv()
         assert child.exitcode == 127
+        child = h.process.execv(['/dev/null'])
+        child.done.recv()
+        assert child.exitcode == 126
 
     def test_stderr(self):
         h = vanilla.Hub()
