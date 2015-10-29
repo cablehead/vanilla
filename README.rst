@@ -89,7 +89,7 @@ Status
 
 .. _Read the Docs: http://vanillapy.readthedocs.org/
 .. |Vanilla| image:: https://raw.githubusercontent.com/cablehead/vanilla/master/docs/_static/logo2.png
-.. |Build Status| image:: http://img.shields.io/travis/cablehead/vanilla.svg?style=flat-square
+.. |Build Status| image:: https://img.shields.io/travis/cablehead/vanilla.svg?style=flat-square
    :target: https://travis-ci.org/cablehead/vanilla
-.. |Coverage Status| image:: http://img.shields.io/coveralls/cablehead/vanilla.svg?style=flat-square
-   :target: https://coveralls.io/r/cablehead/vanilla?branch=master
+.. |Coverage Status| image:: https://img.shields.io/codecov/c/github/cablehead/vanilla.svg?style=flat-square
+   :target: https://codecov.io/github/cablehead/vanilla?branch=master
