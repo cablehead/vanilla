@@ -24,6 +24,23 @@ class TestProcess(object):
         child.done.recv()
         assert not child.check_liveness()
 
+        # spawn a new process to ensure the reaper watch is rebooted
+        h.sleep(1)
+        child = h.process.execv(
+            ['/usr/bin/env', 'grep', '--line-buffered', 'foo'])
+        assert child.check_liveness()
+        pytest.raises(vanilla.Timeout, child.done.recv, timeout=0)
+
+        child.stdin.send('foo1\n')
+        assert child.stdout.recv() == 'foo1\n'
+        child.stdin.send('bar1\n')
+        child.stdin.send('foo2\n')
+        assert child.stdout.recv() == 'foo2\n'
+
+        child.terminate()
+        child.done.recv()
+        assert not child.check_liveness()
+
     def test_unexecutable(self):
         h = vanilla.Hub()
         child = h.process.execv(['foobar123'])

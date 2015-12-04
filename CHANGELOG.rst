@@ -1,6 +1,15 @@
 Change log
 ==========
 
+0.1.16
+------
+
+Bug Fixes
+~~~~~~~~~
+
+* ensure process reaper is restarted after an initial batch of children have
+  run
+
 0.1.15
 ------
 

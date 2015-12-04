@@ -80,6 +80,7 @@ class __plugin__(object):
             self.children = [
                 child for child in self.children if child.check_liveness()]
         self.sigchld.close()
+        self.sigchld = None
 
     def bootstrap(self, f, *a, **kw):
         import marshal
