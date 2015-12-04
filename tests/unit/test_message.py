@@ -550,6 +550,26 @@ class TestRouter(object):
         assert r.recv() == 1
         assert r.recv() == 2
 
+    def test_state(self):
+        h = vanilla.Hub()
+
+        r = h.router()
+        s1 = h.state()
+        s2 = h.state()
+        s1.pipe(r)
+        s2.pipe(r)
+
+        s1.send('s1')
+        s2.send('s2')
+        assert r.recv() == 's1'
+        assert r.recv() == 's2'
+        assert r.recv() == 's1'
+
+        s1.close()
+        assert r.recv() == 's2'
+        assert r.recv() == 's2'
+        assert r.recv() == 's2'
+
 
 class TestChannel(object):
     def test_send_then_recv(self):
